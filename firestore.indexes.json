@@ -1,4 +1,37 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "leaderboardEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "optIn", "order": "ASCENDING" },
+        { "fieldPath": "wins", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboardEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "optIn", "order": "ASCENDING" },
+        { "fieldPath": "tournamentsWon", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboardEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "optIn", "order": "ASCENDING" },
+        { "fieldPath": "bestStreak", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboardEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "optIn", "order": "ASCENDING" },
+        { "fieldPath": "blitzWins", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

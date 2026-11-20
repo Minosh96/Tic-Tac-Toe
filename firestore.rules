@@ -1,69 +1,781 @@
 rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — Melow Tic Tac Toe v2.0
+// ===============================================================
+//
+// Collection: rooms/{roomId}
+// Document ID: 6-character unguessable room code
+// Fields:
+//   - hostId: string (required, 1..128, immutable, == auth.uid on create)
+//   - guestId: string (required, '' on create, == auth.uid on join, immutable after join)
+//   - hostName: string (required, 1..20, immutable)
+//   - guestName: string (optional on create, 1..20 on join, immutable after join)
+//   - hostEmoji: string (required, 1..16; mutable only on round-1 wheel lock-in)
+//   - guestEmoji: string (optional on create, 1..16 on join, != hostEmoji; mutable only on round-1 wheel lock-in)
+//   - hostAvatar: string (optional, nullable, 0..32, immutable)
+//   - guestAvatar: string (optional, nullable, 0..32, set on join, immutable after join)
+//   - gameMode: string (optional, 'classic' | 'blitz'; mutable only on round-1 wheel lock-in)
+//   - size: int (required, 3 | 4 | 5 | 6; mutable only on round-1 wheel lock-in)
+//   - bestOf: int (required, 3 | 5; mutable only on round-1 wheel lock-in)
+//   - status: string (required, 'lobby' | 'playing' | 'finished' | 'abandoned')
+//   - board: list (required, length == size * size)
+//   - turn: string (required, 'h' | 'g')
+//   - round: int (required, 1..200)
+//   - roundDone: bool (required)
+//   - hostWins: int (required, 0..10)
+//   - guestWins: int (required, 0..10)
+//   - draws: int (required, 0..200)
+//   - lastResult: string (optional, '' | 'h' | 'g' | 'draw')
+//   - champion: string (optional, '' | 'h' | 'g')
+//   - turnStartedAt: timestamp (optional, nullable)
+//   - turnDeadlineAt: timestamp (optional, nullable)
+//   - timeoutWinner: string (optional, nullable, '' | 'h' | 'g')
+//   - wheelProposal: map (<=16 keys) | string (<=100) (optional, nullable)
+//   - wheelResult: map (<=16 keys) | string (<=100) (optional, nullable)
+//   - hostLeft: bool (optional, nullable; only host may change)
+//   - guestLeft: bool (optional, nullable; only guest may change)
+//   - createdAt: timestamp (required, == request.time on create, immutable)
+//   - updatedAt: timestamp (optional, nullable)
+//   - expiresAt: timestamp (optional, nullable, immutable)
+//
+// Subcollection: rooms/{roomId}/messages/{messageId}
+// Fields:
+//   - uid: string (required, == auth.uid)
+//   - text: string (required, 1..280)
+//   - createdAt: timestamp (required, == request.time)
+//   - expireAt: timestamp (required, > request.time && < request.time + 25h)
+//
+// Subcollection: rooms/{roomId}/reactions/{reactionId}
+// Fields:
+//   - senderUid: string (required, == auth.uid)
+//   - kind: string (required, 'emoji' | 'taunt')
+//   - payload: string (required, 1..40)
+//   - createdAt: timestamp (required, == request.time)
+//   - expireAt: timestamp (required, > request.time && < request.time + 10m)
+//
+// Collection: users/{uid} (Non-PII public/game profile ONLY; no email/phone/private prefs)
+// Fields:
+//   - nickname: string (required, 1..20)
+//   - avatarId: string (required, 1..32)
+//   - preferredEmoji: string (required, 1..16)
+//   - friendCode: string (optional, 6..12, immutable once set)
+//   - publicProfileEnabled: bool (required)
+//   - leaderboardOptIn: bool (required)
+//   - createdAt: timestamp (optional, == request.time on create, immutable once set)
+//   - updatedAt: timestamp (optional)
+//
+// Subcollection: users/{uid}/private/{docId} (Owner-only private preferences/settings)
+//   - Bounded map (<=30 keys), optional createdAt (immutable)/updatedAt timestamps,
+//     optional hiddenRivalUids list (<=500 items).
+//
+// Subcollection: users/{uid}/friends/{friendUid}
+// Fields:
+//   - friendUid: string (required, == friendUid, != uid, immutable)
+//   - nickname: string (required, 1..20)
+//   - avatarId: string (required, 1..32)
+//   - since: timestamp (required, immutable)
+//   - status: string (required, 'accepted' | 'pending'; must be 'accepted' when written by friendUid)
+//
+// Subcollection: users/{uid}/blocked/{blockedUid}
+// Fields:
+//   - blockedUid: string (optional, == blockedUid)
+//   - uid: string (optional, == blockedUid)
+//   - nickname: string (optional, nullable, 0..20)
+//   - avatarId: string (optional, nullable, 0..32)
+//   - reason: string (optional, nullable, 0..300)
+//   - createdAt: timestamp (optional, immutable once set)
+//
+// Collection: friendCodes/{code}
+// Document ID: 6..12 character friend code
+// Fields:
+//   - uid: string (required, == auth.uid)
+//   - createdAt: timestamp (required, == request.time)
+//
+// Collection: friendRequests/{requestId}
+// Fields:
+//   - senderUid: string (required, == auth.uid on create, immutable)
+//   - senderName: string (required, 1..20, immutable)
+//   - senderAvatar: string (optional, nullable, 0..32, immutable)
+//   - receiverUid: string (required, != senderUid, immutable)
+//   - receiverName: string (optional, nullable, 0..20)
+//   - receiverAvatar: string (optional, nullable, 0..32)
+//   - status: string (required, 'pending' on create -> 'accepted'|'declined'|'cancelled')
+//   - createdAt: timestamp (required, == request.time on create, immutable)
+//   - expiresAt: timestamp (optional, nullable, immutable)
+//
+// Collection: friendChallenges/{challengeId}
+// Fields:
+//   - senderUid: string (required, == auth.uid on create, immutable)
+//   - senderName: string (required, 1..20, immutable)
+//   - senderAvatar: string (optional, nullable, 0..32, immutable)
+//   - senderEmoji: string (optional, nullable, 0..16, immutable)
+//   - receiverUid: string (required, != senderUid, immutable)
+//   - receiverName: string (optional, nullable, 0..20, immutable)
+//   - mode: string (required, 'classic' | 'blitz', immutable)
+//   - boardSize: int (required, 3 | 4 | 5 | 6, immutable)
+//   - bestOf: int (required, 3 | 5, immutable)
+//   - roomId: string (optional, nullable, 0..6; required 6 chars on accept)
+//   - status: string (required, 'pending' on create -> 'accepted'|'declined'|'cancelled')
+//   - createdAt: timestamp (required, == request.time on create, immutable)
+//   - expiresAt: timestamp (optional, nullable, immutable)
+//
+// Collection: reports/{reportId}
+// Fields:
+//   - reporterUid: string (required, == auth.uid)
+//   - reportedUid: string (required, 1..128, != auth.uid)
+//   - reason: string (required, 1..300)
+//   - createdAt: timestamp (required, == request.time)
+//
+// Server-Authoritative Collections (NO client writes — Admin SDK / Cloud Functions only):
+//   - stats/{uid}
+//   - users/{uid}/achievements/{achievementId}
+//   - users/{uid}/trophies/{trophyId}
+//   - matches/{matchId} (fields include players: list<uid>)
+//   - rivalries/{rivalryId} (fields include playerUids: list<uid>)
+//   - leaderboardEntries/{uid} (fields include optIn: bool)
+//
+// ===============================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+
+    // ===============================================================
+    // Core Auth & Utility Helper Functions
+    // ===============================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAuthenticated() {
+      return signedIn();
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isStringLen(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isOptionalNullableString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+        data[field] == null ||
+        isStringLen(data[field], minLen, maxLen);
+    }
+
+    function isOptionalNullableTimestamp(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        data[field] is timestamp;
+    }
+
+    function isOptionalNullableBool(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        data[field] is bool;
+    }
+
+    function isOptionalWheelPayload(data, field) {
+      return !(field in data) ||
+        data[field] == null ||
+        (data[field] is map && data[field].size() <= 16) ||
+        (data[field] is string && data[field].size() <= 100);
+    }
+
     function isRoomMember(d) {
       return signedIn() && (d.hostId == request.auth.uid || d.guestId == request.auth.uid);
     }
-    match /rooms/{roomId} {
-      allow get: if signedIn(); // Needed to join with an unguessable room code.
-      allow list: if false;
-      allow create: if signedIn()
-        && request.resource.data.hostId == request.auth.uid
-        && request.resource.data.guestId == ''
-        && request.resource.data.status == 'lobby'
-        && request.resource.data.size in [3,4,5,6]
-        && request.resource.data.bestOf in [3,5]
-        && request.resource.data.board.size() == request.resource.data.size * request.resource.data.size
-        && request.resource.data.hostName is string
-        && request.resource.data.hostName.size() <= 20
-        && request.resource.data.hostEmoji is string;
-      // Join path: only fill the empty guest slot, set status to playing.
-      allow update: if signedIn() && (
-        (
-          resource.data.guestId == ''
-          && resource.data.status == 'lobby'
-          && request.auth.uid != resource.data.hostId
-          && request.resource.data.guestId == request.auth.uid
-          && request.resource.data.status == 'playing'
-          && request.resource.data.guestName is string
-          && request.resource.data.guestName.size() <= 20
-          && request.resource.data.guestEmoji != resource.data.hostEmoji
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['guestId','guestName','guestEmoji','status'])
-        )
-        ||
-        (
-          isRoomMember(resource.data)
-          && resource.data.guestId != ''
-          && request.resource.data.hostId == resource.data.hostId
-          && request.resource.data.guestId == resource.data.guestId
-          && request.resource.data.hostName == resource.data.hostName
-          && request.resource.data.guestName == resource.data.guestName
-          && request.resource.data.hostEmoji == resource.data.hostEmoji
-          && request.resource.data.guestEmoji == resource.data.guestEmoji
-          && request.resource.data.size == resource.data.size
-          && request.resource.data.bestOf == resource.data.bestOf
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'board','turn','round','roundDone','lastResult','hostWins','guestWins','draws','champion','status'
-          ])
-        )
+
+    function roomExistsAndMember(roomId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+        isRoomMember(get(/databases/$(database)/documents/rooms/$(roomId)).data);
+    }
+
+    function isPublicProfile(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid)) &&
+        get(/databases/$(database)/documents/users/$(uid)).data.publicProfileEnabled == true;
+    }
+
+    function isBlockedBy(targetUid, actorUid) {
+      return exists(/databases/$(database)/documents/users/$(targetUid)/blocked/$(actorUid));
+    }
+
+    // ===============================================================
+    // Domain Validators (Called in BOTH create and update rules)
+    // ===============================================================
+
+    function isValidRoom(d) {
+      return d.keys().hasOnly([
+          'hostId', 'guestId', 'hostName', 'guestName', 'hostEmoji', 'guestEmoji',
+          'hostAvatar', 'guestAvatar', 'gameMode', 'size', 'bestOf', 'status',
+          'board', 'turn', 'round', 'roundDone', 'hostWins', 'guestWins', 'draws',
+          'lastResult', 'champion', 'turnStartedAt', 'turnDeadlineAt', 'timeoutWinner',
+          'wheelProposal', 'wheelResult', 'hostLeft', 'guestLeft',
+          'createdAt', 'updatedAt', 'expiresAt'
+        ]) &&
+        d.keys().hasAll([
+          'hostId', 'guestId', 'hostName', 'hostEmoji', 'size', 'bestOf',
+          'status', 'board', 'turn', 'round', 'roundDone',
+          'hostWins', 'guestWins', 'draws', 'createdAt'
+        ]) &&
+        isStringLen(d.hostId, 1, 128) &&
+        isStringLen(d.guestId, 0, 128) &&
+        isStringLen(d.hostName, 1, 20) &&
+        isOptionalNullableString(d, 'guestName', 0, 20) &&
+        isStringLen(d.hostEmoji, 1, 16) &&
+        isOptionalNullableString(d, 'guestEmoji', 0, 16) &&
+        isOptionalNullableString(d, 'hostAvatar', 0, 32) &&
+        isOptionalNullableString(d, 'guestAvatar', 0, 32) &&
+        (!('gameMode' in d) || d.gameMode == null || d.gameMode in ['classic', 'blitz']) &&
+        d.size is int && d.size in [3, 4, 5, 6] &&
+        d.bestOf is int && d.bestOf in [3, 5] &&
+        d.status in ['lobby', 'playing', 'finished', 'abandoned'] &&
+        d.board is list && d.board.size() == d.size * d.size &&
+        d.turn in ['h', 'g'] &&
+        d.round is int && d.round >= 1 && d.round <= 200 &&
+        d.roundDone is bool &&
+        d.hostWins is int && d.hostWins >= 0 && d.hostWins <= 10 &&
+        d.guestWins is int && d.guestWins >= 0 && d.guestWins <= 10 &&
+        d.draws is int && d.draws >= 0 && d.draws <= 200 &&
+        (!('lastResult' in d) || d.lastResult in ['', 'h', 'g', 'draw']) &&
+        (!('champion' in d) || d.champion in ['', 'h', 'g']) &&
+        isOptionalNullableTimestamp(d, 'turnStartedAt') &&
+        isOptionalNullableTimestamp(d, 'turnDeadlineAt') &&
+        (!('timeoutWinner' in d) || d.timeoutWinner == null || d.timeoutWinner in ['', 'h', 'g']) &&
+        isOptionalWheelPayload(d, 'wheelProposal') &&
+        isOptionalWheelPayload(d, 'wheelResult') &&
+        isOptionalNullableBool(d, 'hostLeft') &&
+        isOptionalNullableBool(d, 'guestLeft') &&
+        d.createdAt is timestamp &&
+        isOptionalNullableTimestamp(d, 'updatedAt') &&
+        isOptionalNullableTimestamp(d, 'expiresAt');
+    }
+
+    function canModifyWheelConfig(prev, next) {
+      let configKeys = ['gameMode', 'size', 'bestOf', 'hostEmoji', 'guestEmoji'];
+      return !next.diff(prev).affectedKeys().hasAny(configKeys) || (
+        ('wheelResult' in next) &&
+        next.wheelResult != null &&
+        prev.round == 1 &&
+        next.round == 1 &&
+        prev.hostWins == 0 &&
+        prev.guestWins == 0 &&
+        prev.draws == 0 &&
+        next.hostWins == 0 &&
+        next.guestWins == 0 &&
+        next.draws == 0 &&
+        next.hostEmoji != next.guestEmoji
       );
+    }
+
+    function isValidChatMessage(d) {
+      return d.keys().hasOnly(['uid', 'text', 'createdAt', 'expireAt']) &&
+        d.keys().hasAll(['uid', 'text', 'createdAt', 'expireAt']) &&
+        d.uid == request.auth.uid &&
+        isStringLen(d.text, 1, 280) &&
+        d.createdAt == request.time &&
+        d.expireAt is timestamp &&
+        d.expireAt > request.time &&
+        d.expireAt < request.time + duration.value(25, 'h');
+    }
+
+    function isValidReaction(d) {
+      return d.keys().hasOnly(['senderUid', 'kind', 'payload', 'createdAt', 'expireAt']) &&
+        d.keys().hasAll(['senderUid', 'kind', 'payload', 'createdAt', 'expireAt']) &&
+        d.senderUid == request.auth.uid &&
+        d.kind in ['emoji', 'taunt'] &&
+        isStringLen(d.payload, 1, 40) &&
+        d.createdAt == request.time &&
+        d.expireAt is timestamp &&
+        d.expireAt > request.time &&
+        d.expireAt < request.time + duration.value(10, 'm');
+    }
+
+    function isValidUserProfile(d) {
+      return d.keys().hasOnly([
+          'nickname', 'avatarId', 'preferredEmoji', 'friendCode',
+          'publicProfileEnabled', 'leaderboardOptIn', 'createdAt', 'updatedAt'
+        ]) &&
+        d.keys().hasAll([
+          'nickname', 'avatarId', 'preferredEmoji',
+          'publicProfileEnabled', 'leaderboardOptIn'
+        ]) &&
+        isStringLen(d.nickname, 1, 20) &&
+        isStringLen(d.avatarId, 1, 32) &&
+        isStringLen(d.preferredEmoji, 1, 16) &&
+        (!('friendCode' in d) || d.friendCode == null || isStringLen(d.friendCode, 6, 12)) &&
+        d.publicProfileEnabled is bool &&
+        d.leaderboardOptIn is bool &&
+        isOptionalNullableTimestamp(d, 'createdAt') &&
+        isOptionalNullableTimestamp(d, 'updatedAt');
+    }
+
+    function isValidPrivateDoc(d, docId) {
+      return isStringLen(docId, 1, 64) &&
+        d.keys().size() <= 30 &&
+        isOptionalNullableTimestamp(d, 'createdAt') &&
+        isOptionalNullableTimestamp(d, 'updatedAt') &&
+        (!('hiddenRivalUids' in d) || (d.hiddenRivalUids is list && d.hiddenRivalUids.size() <= 500));
+    }
+
+    function isValidFriendEntry(d, ownerUid, friendUid) {
+      return d.keys().hasOnly(['friendUid', 'nickname', 'avatarId', 'since', 'status']) &&
+        d.keys().hasAll(['friendUid', 'nickname', 'avatarId', 'since', 'status']) &&
+        d.friendUid == friendUid &&
+        friendUid != ownerUid &&
+        isStringLen(d.friendUid, 1, 128) &&
+        isStringLen(d.nickname, 1, 20) &&
+        isStringLen(d.avatarId, 1, 32) &&
+        d.since is timestamp &&
+        d.status in ['accepted', 'pending'];
+    }
+
+    function isValidBlockedEntry(d, ownerUid, blockedUid) {
+      return blockedUid != ownerUid &&
+        isStringLen(blockedUid, 1, 128) &&
+        d.keys().hasOnly(['blockedUid', 'uid', 'nickname', 'avatarId', 'reason', 'createdAt']) &&
+        (!('blockedUid' in d) || d.blockedUid == blockedUid) &&
+        (!('uid' in d) || d.uid == blockedUid) &&
+        isOptionalNullableString(d, 'nickname', 0, 20) &&
+        isOptionalNullableString(d, 'avatarId', 0, 32) &&
+        isOptionalNullableString(d, 'reason', 0, 300) &&
+        isOptionalNullableTimestamp(d, 'createdAt');
+    }
+
+    function isValidFriendCode(d, code) {
+      return isStringLen(code, 6, 12) &&
+        d.keys().hasOnly(['uid', 'createdAt']) &&
+        d.keys().hasAll(['uid', 'createdAt']) &&
+        d.uid == request.auth.uid &&
+        d.createdAt == request.time;
+    }
+
+    function isValidFriendRequest(d) {
+      return d.keys().hasOnly([
+          'senderUid', 'senderName', 'senderAvatar',
+          'receiverUid', 'receiverName', 'receiverAvatar',
+          'status', 'createdAt', 'expiresAt'
+        ]) &&
+        d.keys().hasAll([
+          'senderUid', 'senderName', 'receiverUid', 'status', 'createdAt'
+        ]) &&
+        isStringLen(d.senderUid, 1, 128) &&
+        isStringLen(d.senderName, 1, 20) &&
+        isOptionalNullableString(d, 'senderAvatar', 0, 32) &&
+        isStringLen(d.receiverUid, 1, 128) &&
+        d.receiverUid != d.senderUid &&
+        isOptionalNullableString(d, 'receiverName', 0, 20) &&
+        isOptionalNullableString(d, 'receiverAvatar', 0, 32) &&
+        d.status in ['pending', 'accepted', 'declined', 'cancelled'] &&
+        d.createdAt is timestamp &&
+        isOptionalNullableTimestamp(d, 'expiresAt');
+    }
+
+    function isValidFriendChallenge(d) {
+      return d.keys().hasOnly([
+          'senderUid', 'senderName', 'senderAvatar', 'senderEmoji',
+          'receiverUid', 'receiverName',
+          'mode', 'boardSize', 'bestOf', 'roomId',
+          'status', 'createdAt', 'expiresAt'
+        ]) &&
+        d.keys().hasAll([
+          'senderUid', 'senderName', 'receiverUid',
+          'mode', 'boardSize', 'bestOf', 'status', 'createdAt'
+        ]) &&
+        isStringLen(d.senderUid, 1, 128) &&
+        isStringLen(d.senderName, 1, 20) &&
+        isOptionalNullableString(d, 'senderAvatar', 0, 32) &&
+        isOptionalNullableString(d, 'senderEmoji', 0, 16) &&
+        isStringLen(d.receiverUid, 1, 128) &&
+        d.receiverUid != d.senderUid &&
+        isOptionalNullableString(d, 'receiverName', 0, 20) &&
+        d.mode in ['classic', 'blitz'] &&
+        d.boardSize is int && d.boardSize in [3, 4, 5, 6] &&
+        d.bestOf is int && d.bestOf in [3, 5] &&
+        isOptionalNullableString(d, 'roomId', 0, 6) &&
+        d.status in ['pending', 'accepted', 'declined', 'cancelled'] &&
+        d.createdAt is timestamp &&
+        isOptionalNullableTimestamp(d, 'expiresAt');
+    }
+
+    function isValidReport(d) {
+      return d.keys().hasOnly(['reporterUid', 'reportedUid', 'reason', 'createdAt']) &&
+        d.keys().hasAll(['reporterUid', 'reportedUid', 'reason', 'createdAt']) &&
+        d.reporterUid == request.auth.uid &&
+        isStringLen(d.reportedUid, 1, 128) &&
+        d.reportedUid != request.auth.uid &&
+        isStringLen(d.reason, 1, 300) &&
+        d.createdAt == request.time;
+    }
+
+    // ===============================================================
+    // 1. Game Rooms, Chat Messages & Reactions
+    // ===============================================================
+
+    match /rooms/{roomId} {
+      // Needed to look up a room by its unguessable 6-character code; listing is forbidden.
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn() &&
+        isValidRoom(request.resource.data) &&
+        request.resource.data.hostId == request.auth.uid &&
+        request.resource.data.guestId == '' &&
+        request.resource.data.status == 'lobby' &&
+        request.resource.data.round == 1 &&
+        request.resource.data.roundDone == false &&
+        request.resource.data.hostWins == 0 &&
+        request.resource.data.guestWins == 0 &&
+        request.resource.data.draws == 0 &&
+        (!('champion' in request.resource.data) || request.resource.data.champion == '') &&
+        request.resource.data.createdAt == request.time;
+
+      allow update: if signedIn() &&
+        isValidRoom(request.resource.data) && (
+          // Path A: Guest joins an open lobby room.
+          (
+            resource.data.guestId == '' &&
+            resource.data.status == 'lobby' &&
+            request.auth.uid != resource.data.hostId &&
+            request.resource.data.guestId == request.auth.uid &&
+            request.resource.data.status == 'playing' &&
+            isStringLen(request.resource.data.guestName, 1, 20) &&
+            isStringLen(request.resource.data.guestEmoji, 1, 16) &&
+            request.resource.data.guestEmoji != resource.data.hostEmoji &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'guestId', 'guestName', 'guestEmoji', 'guestAvatar',
+              'status', 'turnStartedAt', 'turnDeadlineAt', 'updatedAt'
+            ])
+          )
+          ||
+          // Path B: Active gameplay, challenge wheel lock-in, or player leave.
+          (
+            isRoomMember(resource.data) &&
+            areImmutableFieldsUnchanged([
+              'hostId', 'guestId', 'hostName', 'guestName',
+              'hostAvatar', 'guestAvatar', 'createdAt', 'expiresAt'
+            ]) &&
+            // Each player may only toggle their own leave flag.
+            (request.resource.data.get('hostLeft', false) == resource.data.get('hostLeft', false) ||
+              request.auth.uid == resource.data.hostId) &&
+            (request.resource.data.get('guestLeft', false) == resource.data.get('guestLeft', false) ||
+              request.auth.uid == resource.data.guestId) &&
+            (
+              // Lobby host leave / cancel before a guest joins.
+              (
+                resource.data.guestId == '' &&
+                request.auth.uid == resource.data.hostId &&
+                request.resource.data.status in ['lobby', 'abandoned', 'finished'] &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'hostLeft', 'status', 'updatedAt'
+                ])
+              )
+              ||
+              // Post-join gameplay, wheel lock-in, rematch, or leave.
+              (
+                resource.data.guestId != '' &&
+                canModifyWheelConfig(resource.data, request.resource.data) &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'board', 'turn', 'round', 'roundDone', 'lastResult',
+                  'hostWins', 'guestWins', 'draws', 'champion', 'status',
+                  'turnStartedAt', 'turnDeadlineAt', 'timeoutWinner',
+                  'wheelProposal', 'wheelResult',
+                  'gameMode', 'size', 'bestOf', 'hostEmoji', 'guestEmoji',
+                  'hostLeft', 'guestLeft', 'updatedAt'
+                ])
+              )
+            )
+          )
+        );
+
       allow delete: if false;
+
+      // 2. Room Chat Messages (100% v1 compatible)
       match /messages/{messageId} {
-        allow read: if isRoomMember(get(/databases/$(database)/documents/rooms/$(roomId)).data);
-        allow create: if isRoomMember(get(/databases/$(database)/documents/rooms/$(roomId)).data)
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 280
-          && request.resource.data.createdAt == request.time
-          && request.resource.data.expireAt is timestamp
-          && request.resource.data.expireAt > request.time
-          && request.resource.data.expireAt < request.time + duration.value(25, 'h')
-          && request.resource.data.keys().hasOnly(['uid','text','createdAt','expireAt']);
+        allow read: if roomExistsAndMember(roomId);
+        allow create: if roomExistsAndMember(roomId) &&
+          isValidChatMessage(request.resource.data);
         allow update, delete: if false;
       }
+
+      // 3. Ephemeral Room Reactions & Taunts
+      match /reactions/{reactionId} {
+        allow read: if roomExistsAndMember(roomId);
+        allow create: if roomExistsAndMember(roomId) &&
+          isValidReaction(request.resource.data);
+        allow update, delete: if false;
+      }
+    }
+
+    // ===============================================================
+    // 4-7. Users, Private Settings, Friends, Blocked, Achievements & Trophies
+    // ===============================================================
+
+    match /users/{uid} {
+      // Non-PII game profile only; private data lives in users/{uid}/private/{docId}.
+      allow get: if signedIn() &&
+        (request.auth.uid == uid || (resource != null && resource.data.publicProfileEnabled == true));
+      allow list: if false;
+
+      allow create: if isOwner(uid) &&
+        isValidUserProfile(request.resource.data) &&
+        (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time);
+
+      allow update: if isOwner(uid) &&
+        isValidUserProfile(request.resource.data) &&
+        // createdAt cannot be altered or removed once set.
+        (!('createdAt' in resource.data) || resource.data.createdAt == null ||
+          ('createdAt' in request.resource.data && request.resource.data.createdAt == resource.data.createdAt)) &&
+        // friendCode is immutable once assigned.
+        (!('friendCode' in resource.data) || resource.data.friendCode == null || resource.data.friendCode == '' ||
+          ('friendCode' in request.resource.data && request.resource.data.friendCode == resource.data.friendCode));
+
+      allow delete: if false;
+
+      // 5. Private owner-only preferences & hidden rivals
+      match /private/{docId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) &&
+          isValidPrivateDoc(request.resource.data, docId) &&
+          (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time);
+        allow update: if isOwner(uid) &&
+          isValidPrivateDoc(request.resource.data, docId) &&
+          (!('createdAt' in resource.data) ||
+            ('createdAt' in request.resource.data && request.resource.data.createdAt == resource.data.createdAt));
+        allow delete: if isOwner(uid);
+      }
+
+      // 6. Friends subcollection
+      match /friends/{friendUid} {
+        allow read, delete: if isOwner(uid);
+
+        allow create: if signedIn() &&
+          isValidFriendEntry(request.resource.data, uid, friendUid) && (
+            isOwner(uid) ||
+            (
+              request.auth.uid == friendUid &&
+              request.resource.data.friendUid == request.auth.uid &&
+              request.resource.data.status == 'accepted' &&
+              !isBlockedBy(uid, request.auth.uid)
+            )
+          );
+
+        allow update: if signedIn() &&
+          isValidFriendEntry(request.resource.data, uid, friendUid) &&
+          areImmutableFieldsUnchanged(['friendUid', 'since']) && (
+            isOwner(uid) ||
+            (
+              request.auth.uid == friendUid &&
+              request.resource.data.friendUid == request.auth.uid &&
+              request.resource.data.status == 'accepted' &&
+              !isBlockedBy(uid, request.auth.uid)
+            )
+          );
+      }
+
+      // 7. Blocked users subcollection (owner-only)
+      match /blocked/{blockedUid} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid) &&
+          isValidBlockedEntry(request.resource.data, uid, blockedUid) &&
+          (!('createdAt' in request.resource.data) || request.resource.data.createdAt == request.time);
+        allow update: if isOwner(uid) &&
+          isValidBlockedEntry(request.resource.data, uid, blockedUid) &&
+          (!('createdAt' in resource.data) ||
+            ('createdAt' in request.resource.data && request.resource.data.createdAt == resource.data.createdAt));
+      }
+
+      // 12a. Server-authoritative achievements
+      match /achievements/{achievementId} {
+        allow read: if isOwner(uid) || (signedIn() && isPublicProfile(uid));
+        allow write: if false;
+      }
+
+      // 12b. Server-authoritative trophies
+      match /trophies/{trophyId} {
+        allow read: if isOwner(uid) || (signedIn() && isPublicProfile(uid));
+        allow write: if false;
+      }
+    }
+
+    // ===============================================================
+    // 8. Friend Codes Lookup
+    // ===============================================================
+
+    match /friendCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() &&
+        isValidFriendCode(request.resource.data, code);
+      allow update: if false;
+      allow delete: if isDocOwner();
+    }
+
+    // ===============================================================
+    // 9. Friend Requests
+    // ===============================================================
+
+    match /friendRequests/{requestId} {
+      allow read: if signedIn() && (
+        resource.data.senderUid == request.auth.uid ||
+        resource.data.receiverUid == request.auth.uid
+      );
+
+      allow create: if signedIn() &&
+        isValidFriendRequest(request.resource.data) &&
+        request.resource.data.senderUid == request.auth.uid &&
+        request.resource.data.receiverUid != request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time &&
+        !isBlockedBy(request.resource.data.receiverUid, request.auth.uid);
+
+      allow update: if signedIn() &&
+        isValidFriendRequest(request.resource.data) &&
+        resource.data.status == 'pending' &&
+        areImmutableFieldsUnchanged([
+          'senderUid', 'senderName', 'senderAvatar',
+          'receiverUid', 'createdAt', 'expiresAt'
+        ]) && (
+          (
+            resource.data.receiverUid == request.auth.uid &&
+            request.resource.data.status in ['accepted', 'declined'] &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'receiverName', 'receiverAvatar'
+            ])
+          )
+          ||
+          (
+            resource.data.senderUid == request.auth.uid &&
+            request.resource.data.status == 'cancelled' &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // ===============================================================
+    // 10. Direct Friend Challenges
+    // ===============================================================
+
+    match /friendChallenges/{challengeId} {
+      allow read: if signedIn() && (
+        resource.data.senderUid == request.auth.uid ||
+        resource.data.receiverUid == request.auth.uid
+      );
+
+      allow create: if signedIn() &&
+        isValidFriendChallenge(request.resource.data) &&
+        request.resource.data.senderUid == request.auth.uid &&
+        request.resource.data.receiverUid != request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time &&
+        !isBlockedBy(request.resource.data.receiverUid, request.auth.uid);
+
+      allow update: if signedIn() &&
+        isValidFriendChallenge(request.resource.data) &&
+        resource.data.status == 'pending' &&
+        areImmutableFieldsUnchanged([
+          'senderUid', 'senderName', 'senderAvatar', 'senderEmoji',
+          'receiverUid', 'receiverName',
+          'mode', 'boardSize', 'bestOf', 'createdAt', 'expiresAt'
+        ]) && (
+          (
+            resource.data.receiverUid == request.auth.uid &&
+            request.resource.data.status == 'accepted' &&
+            request.resource.data.roomId is string &&
+            request.resource.data.roomId.size() == 6 &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'roomId'])
+          )
+          ||
+          (
+            resource.data.receiverUid == request.auth.uid &&
+            request.resource.data.status == 'declined' &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          )
+          ||
+          (
+            resource.data.senderUid == request.auth.uid &&
+            request.resource.data.status == 'cancelled' &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // ===============================================================
+    // 11. Abuse Reports (Write-Only by Authenticated Reporter)
+    // ===============================================================
+
+    match /reports/{reportId} {
+      allow create: if signedIn() &&
+        isValidReport(request.resource.data);
+      allow read, update, delete: if false;
+    }
+
+    // ===============================================================
+    // 12. Strictly Server-Authoritative Collections (Admin SDK Only)
+    // ===============================================================
+
+    match /stats/{uid} {
+      allow get: if isOwner(uid) || (signedIn() && isPublicProfile(uid));
+      allow list, write: if false;
+    }
+
+    match /matches/{matchId} {
+      allow read: if signedIn() && (request.auth.uid in resource.data.players);
+      allow write: if false;
+    }
+
+    match /rivalries/{rivalryId} {
+      allow read: if signedIn() && (request.auth.uid in resource.data.playerUids);
+      allow write: if false;
+    }
+
+    match /leaderboardEntries/{uid} {
+      allow read: if signedIn() && (
+        request.auth.uid == uid || resource.data.optIn == true
+      );
+      allow write: if false;
+    }
+
+    // ===============================================================
+    // Default Deny Fallback
+    // ===============================================================
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

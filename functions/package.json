@@ -1,0 +1,20 @@
+{
+  "name": "melow-tic-tac-toe-functions",
+  "version": "2.0.0",
+  "description": "Trusted Firebase Cloud Functions for Melow Tic Tac Toe v2.0",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test test/game_logic.test.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

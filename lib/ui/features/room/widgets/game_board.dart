@@ -3,7 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Responsive, animated N×N Tic-Tac-Toe board with winning-line highlighting.
+import '../../../core/app_theme.dart';
+
+/// Responsive, animated N×N Tic-Tac-Toe board with neon winning-line glow & haptics.
 class GameBoard extends StatelessWidget {
   const GameBoard({
     super.key,
@@ -13,6 +15,8 @@ class GameBoard extends StatelessWidget {
     required this.canPlay,
     required this.onCellTap,
     this.winningLine = const [],
+    this.reducedMotion = false,
+    this.hapticsEnabled = true,
   });
 
   final int size;
@@ -21,13 +25,16 @@ class GameBoard extends StatelessWidget {
   final bool canPlay;
   final ValueChanged<int> onCellTap;
   final List<int> winningLine;
+  final bool reducedMotion;
+  final bool hapticsEnabled;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final winSet = winningLine.toSet();
-    final gap = size >= 5 ? 5.0 : 8.0;
-    final radius = size >= 5 ? 10.0 : 14.0;
+    final gap = size >= 5 ? 5.0 : 9.0;
+    final radius = size >= 5 ? 11.0 : 16.0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -40,10 +47,26 @@ class GameBoard extends StatelessWidget {
             child: AspectRatio(
               aspectRatio: 1,
               child: Container(
-                padding: EdgeInsets.all(gap),
+                padding: EdgeInsets.all(gap + 2),
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(radius + 6),
+                  color: isDark
+                      ? AppTheme.darkSurface
+                      : scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(radius + 8),
+                  border: Border.all(
+                    color: canPlay
+                        ? scheme.primary.withValues(alpha: 0.55)
+                        : scheme.outlineVariant.withValues(alpha: 0.4),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (canPlay ? AppTheme.purpleAccent : Colors.black)
+                          .withValues(alpha: isDark ? 0.25 : 0.08),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
                 child: GridView.builder(
                   physics: const NeverScrollableScrollPhysics(),
@@ -60,16 +83,22 @@ class GameBoard extends StatelessWidget {
                     final displayEmoji = mark.isEmpty ? '' : emojiForSide(mark);
 
                     final bgColor = isWinningCell
-                        ? scheme.tertiaryContainer
+                        ? AppTheme.goldAccent.withValues(
+                            alpha: isDark ? 0.34 : 0.28,
+                          )
                         : mark.isNotEmpty
-                            ? scheme.primaryContainer
-                            : scheme.surface;
+                            ? (isDark
+                                ? AppTheme.darkSurfaceHigh
+                                : scheme.primaryContainer.withValues(alpha: 0.6))
+                            : (isDark
+                                ? AppTheme.darkBackground.withValues(alpha: 0.8)
+                                : scheme.surface);
 
                     final borderColor = isWinningCell
-                        ? scheme.tertiary
+                        ? AppTheme.goldAccent
                         : isTappable
-                            ? scheme.primary.withValues(alpha: 0.35)
-                            : scheme.outlineVariant.withValues(alpha: 0.5);
+                            ? scheme.primary.withValues(alpha: 0.38)
+                            : scheme.outlineVariant.withValues(alpha: 0.35);
 
                     return Semantics(
                       button: isTappable,
@@ -78,14 +107,25 @@ class GameBoard extends StatelessWidget {
                           ? 'Cell ${index + 1}, empty'
                           : 'Cell ${index + 1}, $displayEmoji',
                       child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
+                        duration: Duration(
+                          milliseconds: reducedMotion ? 0 : 220,
+                        ),
                         decoration: BoxDecoration(
                           color: bgColor,
                           borderRadius: BorderRadius.circular(radius),
                           border: Border.all(
                             color: borderColor,
-                            width: isWinningCell ? 2.5 : 1.2,
+                            width: isWinningCell ? 2.6 : 1.2,
                           ),
+                          boxShadow: isWinningCell
+                              ? [
+                                  BoxShadow(
+                                    color: AppTheme.goldAccent
+                                        .withValues(alpha: 0.45),
+                                    blurRadius: 12,
+                                  ),
+                                ]
+                              : null,
                         ),
                         child: Material(
                           color: Colors.transparent,
@@ -94,7 +134,9 @@ class GameBoard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(radius),
                             onTap: isTappable
                                 ? () {
-                                    HapticFeedback.lightImpact();
+                                    if (hapticsEnabled) {
+                                      HapticFeedback.lightImpact();
+                                    }
                                     onCellTap(index);
                                   }
                                 : null,
@@ -102,9 +144,19 @@ class GameBoard extends StatelessWidget {
                               child: Padding(
                                 padding: const EdgeInsets.all(6),
                                 child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 200),
+                                  duration: Duration(
+                                    milliseconds: reducedMotion ? 0 : 220,
+                                  ),
                                   transitionBuilder: (child, anim) =>
-                                      ScaleTransition(scale: anim, child: child),
+                                      reducedMotion
+                                          ? child
+                                          : ScaleTransition(
+                                              scale: CurvedAnimation(
+                                                parent: anim,
+                                                curve: Curves.easeOutBack,
+                                              ),
+                                              child: child,
+                                            ),
                                   child: displayEmoji.isEmpty
                                       ? const SizedBox.shrink(
                                           key: ValueKey('empty'),
