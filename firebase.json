@@ -1,0 +1,33 @@
+{
+  "auth": {
+    "providers": {
+      "anonymous": true
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json",
+    "edition": "enterprise",
+    "database": "melow-game",
+    "location": "asia-south1"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "melow-tic-tac-toe-minosh96",
+          "appId": "1:200714597441:android:f76ab6d144fba3462fc2c0",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "melow-tic-tac-toe-minosh96",
+          "configurations": {
+            "android": "1:200714597441:android:f76ab6d144fba3462fc2c0"
+          }
+        }
+      }
+    }
+  }
+}

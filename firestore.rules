@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isRoomMember(d) {
+      return signedIn() && (d.hostId == request.auth.uid || d.guestId == request.auth.uid);
+    }
+    match /rooms/{roomId} {
+      allow get: if signedIn(); // Needed to join with an unguessable room code.
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.guestId == ''
+        && request.resource.data.status == 'lobby'
+        && request.resource.data.size in [3,4,5,6]
+        && request.resource.data.bestOf in [3,5]
+        && request.resource.data.board.size() == request.resource.data.size * request.resource.data.size
+        && request.resource.data.hostName is string
+        && request.resource.data.hostName.size() <= 20
+        && request.resource.data.hostEmoji is string;
+      // Join path: only fill the empty guest slot, set status to playing.
+      allow update: if signedIn() && (
+        (
+          resource.data.guestId == ''
+          && resource.data.status == 'lobby'
+          && request.auth.uid != resource.data.hostId
+          && request.resource.data.guestId == request.auth.uid
+          && request.resource.data.status == 'playing'
+          && request.resource.data.guestName is string
+          && request.resource.data.guestName.size() <= 20
+          && request.resource.data.guestEmoji != resource.data.hostEmoji
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['guestId','guestName','guestEmoji','status'])
+        )
+        ||
+        (
+          isRoomMember(resource.data)
+          && resource.data.guestId != ''
+          && request.resource.data.hostId == resource.data.hostId
+          && request.resource.data.guestId == resource.data.guestId
+          && request.resource.data.hostName == resource.data.hostName
+          && request.resource.data.guestName == resource.data.guestName
+          && request.resource.data.hostEmoji == resource.data.hostEmoji
+          && request.resource.data.guestEmoji == resource.data.guestEmoji
+          && request.resource.data.size == resource.data.size
+          && request.resource.data.bestOf == resource.data.bestOf
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'board','turn','round','roundDone','lastResult','hostWins','guestWins','draws','champion','status'
+          ])
+        )
+      );
+      allow delete: if false;
+      match /messages/{messageId} {
+        allow read: if isRoomMember(get(/databases/$(database)/documents/rooms/$(roomId)).data);
+        allow create: if isRoomMember(get(/databases/$(database)/documents/rooms/$(roomId)).data)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 280
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.expireAt is timestamp
+          && request.resource.data.expireAt > request.time
+          && request.resource.data.expireAt < request.time + duration.value(25, 'h')
+          && request.resource.data.keys().hasOnly(['uid','text','createdAt','expireAt']);
+        allow update, delete: if false;
+      }
+    }
+  }
+}
