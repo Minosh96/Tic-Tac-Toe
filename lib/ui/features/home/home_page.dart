@@ -8,13 +8,17 @@ import '../../../domain/game_engine.dart';
 import '../../../domain/models/social_models.dart';
 import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
+import '../../core/widgets/emoji_picker_grid.dart';
 import '../../core/widgets/footer.dart';
 import '../../core/widgets/melow_avatar.dart';
 import '../../core/widgets/melow_logo.dart';
+import '../chat/friend_chat_screen.dart';
+import '../notifications/notifications_sheet.dart';
 import '../room/room_page.dart';
 import '../settings/settings_screen.dart';
 
-/// Phase 2 Redesigned Gaming Dashboard Home Screen.
+/// Melow v3.0 Gaming Dashboard with fixed mobile text alignment, unified
+/// live Notification Bell Center, and 100+ categorized Emoji Picker.
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
@@ -37,6 +41,18 @@ class _HomePageState extends State<HomePage> {
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  void _openNotifications(UserProfile? profile) {
+    widget.services.sound.play(SoundEffect.click);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => NotificationsSheet(
+        services: widget.services,
+        me: profile,
+      ),
+    );
+  }
+
   Future<void> _openCreateRoomSheet(UserProfile? profile) async {
     widget.services.sound.play(SoundEffect.click);
     final prefs = widget.services.preferences;
@@ -51,175 +67,196 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       builder: (sheetCtx) => StatefulBuilder(
-        builder: (sheetCtx, setModalState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            16,
-            20,
-            MediaQuery.of(sheetCtx).viewInsets.bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Theme.of(sheetCtx).colorScheme.outlineVariant,
-                      borderRadius: BorderRadius.circular(2),
+        builder: (sheetCtx, setModalState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              14,
+              20,
+              MediaQuery.of(sheetCtx).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Theme.of(sheetCtx).colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Create Match Room',
-                  style: Theme.of(sheetCtx)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: nameCtrl,
-                  maxLength: 20,
-                  decoration: const InputDecoration(
-                    labelText: 'Your nickname',
-                    prefixIcon: Icon(Icons.person_outline_rounded),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Create Match Room',
+                    style: Theme.of(sheetCtx)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Game Mode',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<GameMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: GameMode.classic,
-                        icon: Icon(Icons.grid_on_rounded),
-                        label: Text('Classic'),
-                      ),
-                      ButtonSegment(
-                        value: GameMode.blitz,
-                        icon: Icon(Icons.bolt_rounded),
-                        label: Text('Blitz (5s)'),
-                      ),
-                    ],
-                    selected: {mode},
-                    onSelectionChanged: (v) =>
-                        setModalState(() => mode = v.first),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Board Size',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<int>(
-                    showSelectedIcon: false,
-                    segments: [
-                      for (final n in supportedBoardSizes)
-                        ButtonSegment(value: n, label: Text('$n×$n')),
-                    ],
-                    selected: {size},
-                    onSelectionChanged: (v) =>
-                        setModalState(() => size = v.first),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Text(
-                      'Tournament',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameCtrl,
+                    maxLength: 20,
+                    decoration: const InputDecoration(
+                      labelText: 'Your nickname',
+                      prefixIcon: Icon(Icons.person_outline_rounded),
                     ),
-                    const Spacer(),
-                    SegmentedButton<int>(
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Game Mode',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<GameMode>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: GameMode.classic,
+                          icon: Icon(Icons.grid_on_rounded, size: 18),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Classic'),
+                          ),
+                        ),
+                        ButtonSegment(
+                          value: GameMode.blitz,
+                          icon: Icon(Icons.bolt_rounded, size: 18),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Blitz (5s)'),
+                          ),
+                        ),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (v) =>
+                          setModalState(() => mode = v.first),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Board Size',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      segments: [
+                        for (final n in supportedBoardSizes)
+                          ButtonSegment(
+                            value: n,
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('$n×$n'),
+                            ),
+                          ),
+                      ],
+                      selected: {size},
+                      onSelectionChanged: (v) =>
+                          setModalState(() => size = v.first),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Tournament Format',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<int>(
                       showSelectedIcon: false,
                       segments: [
                         for (final b in supportedBestOf)
-                          ButtonSegment(value: b, label: Text('Best of $b')),
+                          ButtonSegment(
+                            value: b,
+                            label: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('Best of $b'),
+                            ),
+                          ),
                       ],
                       selected: {bestOf},
                       onSelectionChanged: (v) =>
                           setModalState(() => bestOf = v.first),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Choose Emoji Mark',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final c in emojiChoices)
-                      ChoiceChip(
-                        label: Text(c, style: const TextStyle(fontSize: 22)),
-                        selected: emoji == c,
-                        onSelected: (_) => setModalState(() => emoji = c),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text(
+                        'Choose Emoji Mark',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          final err =
-                              GameEngine.validateNickname(nameCtrl.text);
-                          if (err != null) {
-                            _snack(err);
-                            return;
-                          }
-                          setModalState(() => busy = true);
-                          try {
-                            await prefs.setFavoriteBoardSize(size);
-                            await prefs.setFavoriteMode(mode.id);
-                            final code = await widget.services.game.createRoom(
-                              name: nameCtrl.text.trim(),
-                              emoji: emoji,
-                              size: size,
-                              bestOf: bestOf,
-                              gameMode: mode,
-                              hostAvatar: profile?.avatarId ?? 'astro',
-                            );
-                            if (!sheetCtx.mounted) return;
-                            Navigator.pop(sheetCtx);
-                            if (!mounted) return;
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => RoomPage(
-                                  code: code,
-                                  services: widget.services,
-                                ),
-                              ),
-                            );
-                          } catch (e) {
-                            _snack(e.toString().replaceFirst('Exception: ', ''));
-                          } finally {
-                            if (sheetCtx.mounted) {
-                              setModalState(() => busy = false);
+                      const Spacer(),
+                      Text(emoji, style: const TextStyle(fontSize: 24)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  EmojiPickerGrid(
+                    selectedEmoji: emoji,
+                    maxHeight: 165,
+                    onSelected: (e) => setModalState(() => emoji = e),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final err =
+                                GameEngine.validateNickname(nameCtrl.text);
+                            if (err != null) {
+                              _snack(err);
+                              return;
                             }
-                          }
-                        },
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: Text(busy ? 'Creating Room…' : 'Create Room & Play'),
-                ),
-              ],
+                            setModalState(() => busy = true);
+                            try {
+                              await prefs.setFavoriteBoardSize(size);
+                              await prefs.setFavoriteMode(mode.id);
+                              final code = await widget.services.game.createRoom(
+                                name: nameCtrl.text.trim(),
+                                emoji: emoji,
+                                size: size,
+                                bestOf: bestOf,
+                                gameMode: mode,
+                                hostAvatar: profile?.avatarId ?? 'astro',
+                              );
+                              if (!sheetCtx.mounted) return;
+                              Navigator.pop(sheetCtx);
+                              if (!mounted) return;
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => RoomPage(
+                                    code: code,
+                                    services: widget.services,
+                                  ),
+                                ),
+                              );
+                            } catch (e) {
+                              _snack(
+                                e.toString().replaceFirst('Exception: ', ''),
+                              );
+                            } finally {
+                              if (sheetCtx.mounted) {
+                                setModalState(() => busy = false);
+                              }
+                            }
+                          },
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: Text(busy ? 'Creating Room…' : 'Create Room & Play'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -239,125 +276,128 @@ class _HomePageState extends State<HomePage> {
       context: context,
       isScrollControlled: true,
       builder: (sheetCtx) => StatefulBuilder(
-        builder: (sheetCtx, setModalState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            16,
-            20,
-            MediaQuery.of(sheetCtx).viewInsets.bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Theme.of(sheetCtx).colorScheme.outlineVariant,
-                      borderRadius: BorderRadius.circular(2),
+        builder: (sheetCtx, setModalState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              14,
+              20,
+              MediaQuery.of(sheetCtx).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Theme.of(sheetCtx).colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Join Friend’s Room',
-                  style: Theme.of(sheetCtx)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: nameCtrl,
-                  maxLength: 20,
-                  decoration: const InputDecoration(
-                    labelText: 'Your nickname',
-                    prefixIcon: Icon(Icons.person_outline_rounded),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Join Friend’s Room',
+                    style: Theme.of(sheetCtx)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: codeCtrl,
-                  textCapitalization: TextCapitalization.characters,
-                  maxLength: 6,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9]')),
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: '6-character room code',
-                    hintText: 'ABC234',
-                    prefixIcon: Icon(Icons.key_rounded),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameCtrl,
+                    maxLength: 20,
+                    decoration: const InputDecoration(
+                      labelText: 'Your nickname',
+                      prefixIcon: Icon(Icons.person_outline_rounded),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Choose Emoji Mark',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final c in emojiChoices)
-                      ChoiceChip(
-                        label: Text(c, style: const TextStyle(fontSize: 22)),
-                        selected: emoji == c,
-                        onSelected: (_) => setModalState(() => emoji = c),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: codeCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    maxLength: 6,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9]')),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: '6-character room code',
+                      hintText: 'ABC234',
+                      prefixIcon: Icon(Icons.key_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Text(
+                        'Choose Emoji Mark',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          final err =
-                              GameEngine.validateNickname(nameCtrl.text);
-                          if (err != null) {
-                            _snack(err);
-                            return;
-                          }
-                          final code = codeCtrl.text.trim().toUpperCase();
-                          if (code.length != 6) {
-                            _snack('Enter a valid 6-character room code.');
-                            return;
-                          }
-                          setModalState(() => busy = true);
-                          try {
-                            await widget.services.game.joinRoom(
-                              code: code,
-                              name: nameCtrl.text.trim(),
-                              emoji: emoji,
-                              guestAvatar: profile?.avatarId ?? 'fox',
-                            );
-                            if (!sheetCtx.mounted) return;
-                            Navigator.pop(sheetCtx);
-                            if (!mounted) return;
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => RoomPage(
-                                  code: code,
-                                  services: widget.services,
-                                ),
-                              ),
-                            );
-                          } catch (e) {
-                            _snack(e.toString().replaceFirst('Exception: ', ''));
-                          } finally {
-                            if (sheetCtx.mounted) {
-                              setModalState(() => busy = false);
+                      const Spacer(),
+                      Text(emoji, style: const TextStyle(fontSize: 24)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  EmojiPickerGrid(
+                    selectedEmoji: emoji,
+                    maxHeight: 165,
+                    onSelected: (e) => setModalState(() => emoji = e),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final err =
+                                GameEngine.validateNickname(nameCtrl.text);
+                            if (err != null) {
+                              _snack(err);
+                              return;
                             }
-                          }
-                        },
-                  icon: const Icon(Icons.login_rounded),
-                  label: Text(busy ? 'Joining…' : 'Join Room'),
-                ),
-              ],
+                            final code = codeCtrl.text.trim().toUpperCase();
+                            if (code.length != 6) {
+                              _snack('Enter a valid 6-character room code.');
+                              return;
+                            }
+                            setModalState(() => busy = true);
+                            try {
+                              await widget.services.game.joinRoom(
+                                code: code,
+                                name: nameCtrl.text.trim(),
+                                emoji: emoji,
+                                guestAvatar: profile?.avatarId ?? 'fox',
+                              );
+                              if (!sheetCtx.mounted) return;
+                              Navigator.pop(sheetCtx);
+                              if (!mounted) return;
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => RoomPage(
+                                    code: code,
+                                    services: widget.services,
+                                  ),
+                                ),
+                              );
+                            } catch (e) {
+                              _snack(
+                                e.toString().replaceFirst('Exception: ', ''),
+                              );
+                            } finally {
+                              if (sheetCtx.mounted) {
+                                setModalState(() => busy = false);
+                              }
+                            }
+                          },
+                    icon: const Icon(Icons.login_rounded),
+                    label: Text(busy ? 'Joining…' : 'Join Room'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -383,36 +423,25 @@ class _HomePageState extends State<HomePage> {
             final stats = statsSnap.data ?? const PlayerStats();
             return Scaffold(
               appBar: AppBar(
-                titleSpacing: 16,
-                title: Row(
+                titleSpacing: 14,
+                title: const Row(
                   children: [
-                    const MelowLogo(size: 36, borderRadius: 10, showGlow: false),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text(
-                        'Melow Tic Tac Toe',
-                        overflow: TextOverflow.ellipsis,
+                    MelowLogo(size: 34, borderRadius: 10, showGlow: false),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: FittedBox(
+                        alignment: Alignment.centerLeft,
+                        fit: BoxFit.scaleDown,
+                        child: Text('Melow Tic Tac Toe'),
                       ),
                     ),
                   ],
                 ),
                 actions: [
-                  // Notification indicator for pending friend requests / challenges
-                  StreamBuilder<List<FriendChallenge>>(
-                    stream:
-                        widget.services.friends.watchIncomingChallenges(uid),
-                    builder: (context, chalSnap) {
-                      final count = chalSnap.data?.length ?? 0;
-                      return IconButton(
-                        tooltip: 'Friend invitations',
-                        onPressed: () => widget.onNavigateTab(1),
-                        icon: Badge(
-                          isLabelVisible: count > 0,
-                          label: Text('$count'),
-                          child: const Icon(Icons.notifications_none_rounded),
-                        ),
-                      );
-                    },
+                  _NotificationBellButton(
+                    services: widget.services,
+                    uid: uid,
+                    onPressed: () => _openNotifications(profile),
                   ),
                   IconButton(
                     tooltip:
@@ -451,7 +480,7 @@ class _HomePageState extends State<HomePage> {
                       children: [
                         // Player Hero Card
                         Container(
-                          padding: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.all(18),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: isDark
@@ -483,6 +512,7 @@ class _HomePageState extends State<HomePage> {
                                 children: [
                                   MelowAvatar(
                                     avatarId: profile?.avatarId ?? 'astro',
+                                    photoBase64: profile?.photoBase64,
                                     size: 52,
                                     borderColor: AppTheme.cyanAccent,
                                   ),
@@ -496,13 +526,13 @@ class _HomePageState extends State<HomePage> {
                                           'Welcome back, ${profile?.nickname ?? 'Challenger'}!',
                                           style: const TextStyle(
                                             color: Colors.white,
-                                            fontSize: 19,
+                                            fontSize: 18,
                                             fontWeight: FontWeight.w900,
                                           ),
-                                          maxLines: 1,
+                                          maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        const SizedBox(height: 4),
+                                        const SizedBox(height: 5),
                                         Container(
                                           padding: const EdgeInsets.symmetric(
                                             horizontal: 10,
@@ -526,20 +556,21 @@ class _HomePageState extends State<HomePage> {
                                       ],
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
                                   Text(
                                     profile?.preferredEmoji ?? '❌',
-                                    style: const TextStyle(fontSize: 34),
+                                    style: const TextStyle(fontSize: 32),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 18),
+                              const SizedBox(height: 16),
                               SizedBox(
                                 width: double.infinity,
                                 child: FilledButton.icon(
                                   style: FilledButton.styleFrom(
                                     backgroundColor: AppTheme.goldAccent,
                                     foregroundColor: AppTheme.darkBackground,
-                                    minimumSize: const Size.fromHeight(54),
+                                    minimumSize: const Size.fromHeight(52),
                                   ),
                                   onPressed: () =>
                                       _openCreateRoomSheet(profile),
@@ -561,39 +592,42 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        // Quick Actions Row
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _QuickActionCard(
-                                icon: Icons.add_box_rounded,
-                                color: AppTheme.purpleAccent,
-                                title: 'Create Room',
-                                subtitle: 'Classic or Blitz',
-                                onTap: () => _openCreateRoomSheet(profile),
+                        // Quick Actions Row — uniform height & scaleDown text!
+                        IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: _QuickActionCard(
+                                  icon: Icons.add_box_rounded,
+                                  color: AppTheme.purpleAccent,
+                                  title: 'Create Room',
+                                  subtitle: 'Classic / Blitz',
+                                  onTap: () => _openCreateRoomSheet(profile),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _QuickActionCard(
-                                icon: Icons.vpn_key_rounded,
-                                color: AppTheme.cyanAccent,
-                                title: 'Join Room',
-                                subtitle: 'Enter 6-char code',
-                                onTap: () => _openJoinRoomSheet(profile),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _QuickActionCard(
+                                  icon: Icons.vpn_key_rounded,
+                                  color: AppTheme.cyanAccent,
+                                  title: 'Join Room',
+                                  subtitle: '6-char code',
+                                  onTap: () => _openJoinRoomSheet(profile),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _QuickActionCard(
-                                icon: Icons.groups_rounded,
-                                color: AppTheme.goldAccent,
-                                title: 'Challenge',
-                                subtitle: 'Invite a friend',
-                                onTap: () => widget.onNavigateTab(1),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _QuickActionCard(
+                                  icon: Icons.groups_rounded,
+                                  color: AppTheme.goldAccent,
+                                  title: 'Challenge',
+                                  subtitle: 'Play friends',
+                                  onTap: () => widget.onNavigateTab(1),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 14),
                         // Stats & Trophies Summary
@@ -605,14 +639,15 @@ class _HomePageState extends State<HomePage> {
                               children: [
                                 Row(
                                   children: [
-                                    const Text(
-                                      'Your Arena Stats',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 15,
+                                    const Expanded(
+                                      child: Text(
+                                        'Your Arena Stats',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 15,
+                                        ),
                                       ),
                                     ),
-                                    const Spacer(),
                                     TextButton(
                                       onPressed: () => widget.onNavigateTab(2),
                                       child: Text(
@@ -668,7 +703,7 @@ class _HomePageState extends State<HomePage> {
                                 ),
                                 leading: const Text(
                                   '🎖️',
-                                  style: TextStyle(fontSize: 32),
+                                  style: TextStyle(fontSize: 30),
                                 ),
                                 title: const Text(
                                   'Achievements & Trophy Cabinet',
@@ -702,7 +737,7 @@ class _HomePageState extends State<HomePage> {
                           },
                         ),
                         const SizedBox(height: 14),
-                        // Recently Played Friends / Quick Rematch
+                        // Recently Played Friends / Quick Chat
                         StreamBuilder<List<FriendEntry>>(
                           stream: widget.services.friends.watchFriends(uid),
                           builder: (context, friendsSnap) {
@@ -712,12 +747,12 @@ class _HomePageState extends State<HomePage> {
                                 child: ListTile(
                                   leading: const Icon(Icons.person_add_rounded),
                                   title: const Text(
-                                    'Add Friends & Build Rivalries',
+                                    'Add Friends, Chat & Call',
                                     style:
                                         TextStyle(fontWeight: FontWeight.w800),
                                   ),
                                   subtitle: const Text(
-                                    'Share your friend code to challenge friends anytime.',
+                                    'Share your friend code to chat, voice call, and challenge friends.',
                                   ),
                                   trailing: const Icon(
                                     Icons.arrow_forward_rounded,
@@ -734,14 +769,15 @@ class _HomePageState extends State<HomePage> {
                                   children: [
                                     Row(
                                       children: [
-                                        const Text(
-                                          'Quick Challenge Friends',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 15,
+                                        const Expanded(
+                                          child: Text(
+                                            'Quick Chat & Challenge Friends',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 15,
+                                            ),
                                           ),
                                         ),
-                                        const Spacer(),
                                         TextButton(
                                           onPressed: () =>
                                               widget.onNavigateTab(1),
@@ -750,7 +786,7 @@ class _HomePageState extends State<HomePage> {
                                       ],
                                     ),
                                     SizedBox(
-                                      height: 82,
+                                      height: 86,
                                       child: ListView.separated(
                                         scrollDirection: Axis.horizontal,
                                         itemCount: friends.length.clamp(0, 8),
@@ -761,16 +797,29 @@ class _HomePageState extends State<HomePage> {
                                           return InkWell(
                                             borderRadius:
                                                 BorderRadius.circular(14),
-                                            onTap: () =>
-                                                widget.onNavigateTab(1),
+                                            onTap: () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    FriendChatScreen(
+                                                  services: widget.services,
+                                                  friendUid: f.friendUid,
+                                                  friendName: f.nickname,
+                                                  friendAvatar: f.avatarId,
+                                                  friendPhotoBase64:
+                                                      f.photoBase64,
+                                                ),
+                                              ),
+                                            ),
                                             child: SizedBox(
-                                              width: 68,
+                                              width: 70,
                                               child: Column(
                                                 mainAxisAlignment:
                                                     MainAxisAlignment.center,
                                                 children: [
                                                   MelowAvatar(
                                                     avatarId: f.avatarId,
+                                                    photoBase64: f.photoBase64,
                                                     size: 46,
                                                   ),
                                                   const SizedBox(height: 6),
@@ -812,6 +861,69 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+/// Live aggregated Notification Bell watching calls, requests, challenges & unread chats.
+class _NotificationBellButton extends StatelessWidget {
+  const _NotificationBellButton({
+    required this.services,
+    required this.uid,
+    required this.onPressed,
+  });
+
+  final AppServices services;
+  final String uid;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<VoiceCallSession>>(
+      stream: services.voiceCall.watchIncomingCalls(uid),
+      builder: (context, callSnap) {
+        return StreamBuilder<List<FriendRequest>>(
+          stream: services.friends.watchIncomingRequests(uid),
+          builder: (context, reqSnap) {
+            return StreamBuilder<List<FriendChallenge>>(
+              stream: services.friends.watchIncomingChallenges(uid),
+              builder: (context, chalSnap) {
+                return StreamBuilder<List<FriendChallenge>>(
+                  stream: services.friends.watchOutgoingChallenges(uid),
+                  builder: (context, outSnap) {
+                    return StreamBuilder<List<DirectChatSummary>>(
+                      stream: services.chat.watchUnreadChats(uid),
+                      builder: (context, chatSnap) {
+                        final acceptedOut = (outSnap.data ?? const [])
+                            .where((c) => c.isAccepted && c.roomId.isNotEmpty)
+                            .length;
+                        final count = (callSnap.data?.length ?? 0) +
+                            (reqSnap.data?.length ?? 0) +
+                            (chalSnap.data?.length ?? 0) +
+                            acceptedOut +
+                            (chatSnap.data?.length ?? 0);
+                        return IconButton(
+                          tooltip: 'Notifications',
+                          onPressed: onPressed,
+                          icon: Badge(
+                            isLabelVisible: count > 0,
+                            label: Text('$count'),
+                            child: Icon(
+                              count > 0
+                                  ? Icons.notifications_active_rounded
+                                  : Icons.notifications_none_rounded,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class _QuickActionCard extends StatelessWidget {
   const _QuickActionCard({
     required this.icon,
@@ -834,8 +946,9 @@ class _QuickActionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
@@ -846,23 +959,27 @@ class _QuickActionCard extends StatelessWidget {
                 child: Icon(icon, color: color, size: 22),
               ),
               const SizedBox(height: 8),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  subtitle,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
@@ -889,16 +1006,21 @@ class _MiniStat extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: color,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
             ),
           ),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 11,
               color: Theme.of(context).colorScheme.onSurfaceVariant,

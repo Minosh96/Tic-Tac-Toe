@@ -28,7 +28,7 @@ class SettingsScreen extends StatelessWidget {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  _SectionHeader(title: 'Appearance'),
+                  const _SectionHeader(title: 'Appearance'),
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(14),
@@ -43,21 +43,33 @@ class SettingsScreen extends StatelessWidget {
                           SizedBox(
                             width: double.infinity,
                             child: SegmentedButton<ThemeMode>(
+                              showSelectedIcon: false,
                               segments: const [
                                 ButtonSegment(
                                   value: ThemeMode.system,
-                                  icon: Icon(Icons.brightness_auto_rounded),
-                                  label: Text('System'),
+                                  icon: Icon(Icons.brightness_auto_rounded,
+                                      size: 18),
+                                  label: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text('System'),
+                                  ),
                                 ),
                                 ButtonSegment(
                                   value: ThemeMode.light,
-                                  icon: Icon(Icons.light_mode_rounded),
-                                  label: Text('Light'),
+                                  icon:
+                                      Icon(Icons.light_mode_rounded, size: 18),
+                                  label: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text('Light'),
+                                  ),
                                 ),
                                 ButtonSegment(
                                   value: ThemeMode.dark,
-                                  icon: Icon(Icons.dark_mode_rounded),
-                                  label: Text('Dark'),
+                                  icon: Icon(Icons.dark_mode_rounded, size: 18),
+                                  label: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text('Dark'),
+                                  ),
                                 ),
                               ],
                               selected: {prefs.themeMode},
@@ -72,7 +84,7 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _SectionHeader(title: 'Audio, Haptics & Accessibility'),
+                  const _SectionHeader(title: 'Audio, Haptics & Accessibility'),
                   Card(
                     child: Column(
                       children: [
@@ -122,7 +134,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   if (profile != null) ...[
                     const SizedBox(height: 16),
-                    _SectionHeader(title: 'Privacy & Leaderboards'),
+                    const _SectionHeader(title: 'Privacy & Leaderboards'),
                     Card(
                       child: Column(
                         children: [
@@ -163,12 +175,12 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  _SectionHeader(title: 'App Info'),
+                  const _SectionHeader(title: 'App Info'),
                   Card(
                     child: ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('About Melow Tic Tac Toe'),
-                      subtitle: const Text('Version 2.0.0 • Melow Labs'),
+                      subtitle: const Text('Version 3.0.0 • Melow Labs'),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => Navigator.push(
                         context,

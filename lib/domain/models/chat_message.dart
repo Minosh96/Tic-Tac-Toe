@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Immutable domain model representing a single room chat message.
+/// Immutable domain model representing a single room chat message (text and/or image).
 class ChatMessage {
   const ChatMessage({
     required this.id,
     required this.uid,
     required this.text,
+    this.imageBase64,
     required this.createdAt,
     required this.expireAt,
   });
@@ -13,8 +14,11 @@ class ChatMessage {
   final String id;
   final String uid;
   final String text;
+  final String? imageBase64;
   final DateTime? createdAt;
   final DateTime? expireAt;
+
+  bool get hasImage => imageBase64 != null && imageBase64!.isNotEmpty;
 
   factory ChatMessage.fromFirestore(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -26,6 +30,7 @@ class ChatMessage {
       id: doc.id,
       uid: data['uid'] as String? ?? '',
       text: data['text'] as String? ?? '',
+      imageBase64: data['imageBase64'] as String?,
       createdAt: created is Timestamp ? created.toDate() : null,
       expireAt: expiry is Timestamp ? expiry.toDate() : null,
     );

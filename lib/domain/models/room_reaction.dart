@@ -1,8 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Allowed live emoji reactions (Phase 5).
+/// Allowed live emoji reactions (expanded with funny & expressive emojis).
 const List<String> allowedReactionEmojis = [
   '😂',
+  '🤣',
   '😎',
   '😲',
   '👏',
@@ -11,9 +12,20 @@ const List<String> allowedReactionEmojis = [
   '😭',
   '👍',
   '❤️',
+  '🤪',
+  '🤡',
+  '💀',
+  '🤯',
+  '🙈',
+  '💩',
+  '👻',
+  '👑',
+  '⚡',
+  '👦',
+  '👧',
 ];
 
-/// Allowed playful, non-abusive quick taunts (Phase 5).
+/// Allowed playful, non-abusive quick taunts.
 const List<String> allowedQuickTaunts = [
   'Your turn!',
   'Nice move!',

@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 2.0.0 (Build 2)',
+            'Version 3.0.0 (Build 3)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -39,20 +39,31 @@ class AboutScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'What’s New in Version 2.0',
+                    'What’s New in Version 3.0',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 10),
-                  const _Bullet(text: 'Neon arcade dark & cheerful light themes'),
-                  const _Bullet(text: 'Blitz Mode — 5-second turns with synchronized timer'),
-                  const _Bullet(text: 'Random Challenge Wheel with two-player agreement'),
-                  const _Bullet(text: 'Live emoji reactions & playful quick taunts'),
-                  const _Bullet(text: 'Player profiles, achievements, trophy cabinet & leaderboards'),
-                  const _Bullet(text: 'Friends list, room challenges & head-to-head rivalries'),
-                  const _Bullet(text: 'Shareable PNG victory cards with privacy toggle'),
+                  const _Bullet(
+                    text: 'Instant Melow Cup trophies, achievements & stats sync after every tournament win',
+                  ),
+                  const _Bullet(
+                    text: '100+ categorized emojis including Boy 👦, Girl 👧 & funny emojis',
+                  ),
+                  const _Bullet(
+                    text: 'Direct Friend Chat with Gallery/Camera photo sharing & live WebRTC Voice Calls',
+                  ),
+                  const _Bullet(
+                    text: 'Custom Profile Photo selection directly from your phone gallery',
+                  ),
+                  const _Bullet(
+                    text: 'Live Notifications Center for calls, friend requests, challenges & unread messages',
+                  ),
+                  const _Bullet(
+                    text: 'Refined mobile typography & button alignment across all screen sizes',
+                  ),
                 ],
               ),
             ),
@@ -74,7 +85,7 @@ class AboutScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Developed at Melow Labs.\n'
-                    'Powered by Flutter, Firebase Authentication, and Cloud Firestore.',
+                    'Powered by Flutter, Firebase Authentication, Cloud Firestore, and WebRTC.',
                     style: TextStyle(color: scheme.onSurfaceVariant),
                   ),
                 ],

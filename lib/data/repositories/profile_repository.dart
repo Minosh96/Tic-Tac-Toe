@@ -6,7 +6,7 @@ import '../../domain/game_engine.dart';
 import '../../domain/models/social_models.dart';
 import '../../domain/models/user_profile.dart';
 
-/// Manages player profile, private preferences, verified stats, achievements & trophies.
+/// Manages player profile (including gallery photo), preferences, stats, achievements & trophies.
 class ProfileRepository {
   ProfileRepository({
     FirebaseFirestore? firestore,
@@ -36,7 +36,6 @@ class ProfileRepository {
   DocumentReference<Map<String, dynamic>> _prefsRef(String uid) =>
       _userRef(uid).collection('private').doc('preferences');
 
-  /// Ensures new or legacy anonymous accounts have a valid profile + friend code.
   Future<UserProfile> ensureProfile() async {
     final uid = currentUid;
     final ref = _userRef(uid);
@@ -46,7 +45,6 @@ class ProfileRepository {
       if (profile.friendCode.isNotEmpty) return profile;
     }
 
-    // Generate collision-checked friendCode.
     String friendCode = '';
     for (var i = 0; i < 6; i++) {
       final candidate = GameEngine.generateFriendCode();
@@ -103,6 +101,8 @@ class ProfileRepository {
   Future<void> updateProfile({
     required String nickname,
     required String avatarId,
+    String? photoBase64,
+    bool updatePhoto = false,
     required String preferredEmoji,
     required bool publicProfileEnabled,
     required bool leaderboardOptIn,
@@ -110,14 +110,35 @@ class ProfileRepository {
     final error = GameEngine.validateNickname(nickname);
     if (error != null) throw Exception(error);
     final uid = currentUid;
-    await _userRef(uid).update({
+
+    final patch = <String, dynamic>{
       'nickname': nickname.trim(),
       'avatarId': avatarId,
       'preferredEmoji': preferredEmoji,
       'publicProfileEnabled': publicProfileEnabled,
       'leaderboardOptIn': leaderboardOptIn,
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+    if (updatePhoto) {
+      patch['photoBase64'] = photoBase64;
+    }
+
+    await _userRef(uid).update(patch);
+
+    // Keep leaderboard entry synced if user already has one.
+    try {
+      final lbRef = _db.collection('leaderboardEntries').doc(uid);
+      final lbSnap = await lbRef.get();
+      if (lbSnap.exists) {
+        await lbRef.update({
+          'publicNickname': nickname.trim(),
+          'avatarId': avatarId,
+          if (updatePhoto) 'photoBase64': photoBase64,
+          'optIn': leaderboardOptIn,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (_) {}
   }
 
   Future<Map<String, dynamic>?> fetchPrivatePreferences() async {

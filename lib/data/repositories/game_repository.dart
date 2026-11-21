@@ -3,13 +3,15 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
+import '../../domain/achievements_catalog.dart';
 import '../../domain/game_engine.dart';
 import '../../domain/models/chat_message.dart';
 import '../../domain/models/game_room.dart';
 import '../../domain/models/room_reaction.dart';
 
 /// Encapsulates Firebase Auth, Cloud Firestore, and Cloud Functions for rooms,
-/// Blitz timing, Challenge Wheel agreement, reactions, and temporary chat.
+/// Blitz timing, Challenge Wheel agreement, reactions, temporary chat, and
+/// idempotent post-match Trophy/Achievement/Stats recording.
 class GameRepository {
   GameRepository({
     FirebaseFirestore? firestore,
@@ -33,7 +35,6 @@ class GameRepository {
   DateTime _lastReactionSentAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration reactionCooldown = Duration(milliseconds: 1500);
 
-  /// Ensures the player has an active anonymous Firebase session.
   Future<User> ensureSignedIn() async {
     final existing = _auth.currentUser;
     if (existing != null) return existing;
@@ -58,7 +59,6 @@ class GameRepository {
   DocumentReference<Map<String, dynamic>> _roomRef(String code) =>
       _db.collection('rooms').doc(code);
 
-  /// Live stream of a room document mapped to a type-safe [GameRoom].
   Stream<GameRoom?> watchRoom(String code) {
     return _roomRef(code).snapshots().map((snap) {
       if (!snap.exists || snap.data() == null) return null;
@@ -66,7 +66,6 @@ class GameRepository {
     });
   }
 
-  /// Live stream of the latest 60 room chat messages (newest first).
   Stream<List<ChatMessage>> watchMessages(String code) {
     return _roomRef(code)
         .collection('messages')
@@ -80,7 +79,6 @@ class GameRepository {
         );
   }
 
-  /// Live stream of recent room reactions & quick taunts (newest first).
   Stream<List<RoomReaction>> watchReactions(String code) {
     return _roomRef(code)
         .collection('reactions')
@@ -94,8 +92,6 @@ class GameRepository {
         );
   }
 
-  /// Creates a new multiplayer room with a collision-checked 6-character code.
-  /// Preserves all v1 room fields while adding backwards-compatible v2 fields.
   Future<String> createRoom({
     required String name,
     required String emoji,
@@ -154,7 +150,6 @@ class GameRepository {
     throw Exception('Unable to generate a room code. Please try again.');
   }
 
-  /// Joins an existing lobby room as guest.
   Future<void> joinRoom({
     required String code,
     required String name,
@@ -200,7 +195,6 @@ class GameRepository {
     });
   }
 
-  /// Places the current player's mark at [cellIndex] atomically.
   Future<void> playMove(String code, int cellIndex) async {
     final uid = currentUid;
     final ref = _roomRef(code);
@@ -218,7 +212,6 @@ class GameRepository {
               : '';
       if (side.isEmpty || d['turn'] != side) return;
 
-      // Enforce Blitz deadline cleanly before accepting move.
       final isBlitz = d['gameMode'] == GameMode.blitz.id;
       final deadlineRaw = d['turnDeadlineAt'];
       if (isBlitz &&
@@ -281,21 +274,16 @@ class GameRepository {
     });
 
     if (matchFinished) {
-      await notifyMatchFinished(code);
+      await _tryCloudFinalizeOrLocal(code);
     }
   }
 
-  /// Idempotently resolves a Blitz 5-second move timeout.
-  /// Attempts the trusted Cloud Function first and falls back to an atomic
-  /// Firestore transaction if Cloud Functions are not deployed yet.
   Future<void> claimBlitzTimeout(String code, int expectedRound) async {
     try {
       final callable = _functions.httpsCallable('claimBlitzTimeout');
       await callable.call({'roomId': code, 'round': expectedRound});
       return;
-    } catch (_) {
-      // Fall back to atomic transaction when running on Spark without Functions.
-    }
+    } catch (_) {}
 
     final uid = currentUid;
     final ref = _roomRef(code);
@@ -342,11 +330,255 @@ class GameRepository {
     });
 
     if (matchFinished) {
-      await notifyMatchFinished(code);
+      await _tryCloudFinalizeOrLocal(code);
     }
   }
 
-  /// Advances the room to the next round after a win or draw.
+  /// Idempotently records completed tournament results (cups, trophies,
+  /// achievements, stats, rivalries, match history, and leaderboard) for the
+  /// signed-in player. Works immediately on Spark free tier AND defers safely
+  /// to Cloud Functions when deployed on Blaze.
+  Future<void> recordFinishedMatchForCurrentUser(GameRoom room) async {
+    if (!room.isFinished ||
+        room.champion.isEmpty ||
+        room.hostId.isEmpty ||
+        room.guestId.isEmpty) {
+      return;
+    }
+    final myUid = maybeCurrentUid;
+    if (myUid == null) return;
+    final mySide = room.sideForUid(myUid);
+    if (mySide == null) return;
+
+    final matchId =
+        '${room.code}__${room.hostWins}_${room.guestWins}_${room.draws}_${room.round}';
+    final processedRef = _db
+        .collection('users')
+        .doc(myUid)
+        .collection('processedMatches')
+        .doc(matchId);
+
+    // Quick guard to avoid repeating work on stream rebuilds.
+    final already = await processedRef.get();
+    if (already.exists) return;
+
+    final iWon = room.champion == mySide;
+    final winnerUid = room.champion == 'h' ? room.hostId : room.guestId;
+    final opponentUid = mySide == 'h' ? room.guestId : room.hostId;
+    final wonCleanSweep = iWon &&
+        ((mySide == 'h' && room.guestWins == 0) ||
+            (mySide == 'g' && room.hostWins == 0));
+
+    final statsRef = _db.collection('stats').doc(myUid);
+    final userRef = _db.collection('users').doc(myUid);
+    final leaderboardRef = _db.collection('leaderboardEntries').doc(myUid);
+    final rivalryId = GameEngine.rivalryIdFor(room.hostId, room.guestId);
+    final rivalryRef = _db.collection('rivalries').doc(rivalryId);
+    final matchRef = _db.collection('matches').doc(matchId);
+
+    int nextWins = 0;
+    int nextTournaments = 0;
+    int nextBlitzWins = 0;
+    int nextMegaWins = 0;
+    int nextRivalryTotal = 1;
+
+    await _db.runTransaction((tx) async {
+      final procSnap = await tx.get(processedRef);
+      if (procSnap.exists) return;
+
+      final statsSnap = await tx.get(statsRef);
+      final userSnap = await tx.get(userRef);
+      final rivalSnap = await tx.get(rivalryRef);
+      final matchSnap = await tx.get(matchRef);
+
+      final prevStats = statsSnap.data() ?? const <String, dynamic>{};
+      final userData = userSnap.data() ?? const <String, dynamic>{};
+      final prevRival = rivalSnap.data() ?? const <String, dynamic>{};
+
+      final gamesPlayed = ((prevStats['gamesPlayed'] as num?)?.toInt() ?? 0) + 1;
+      nextWins =
+          ((prevStats['wins'] as num?)?.toInt() ?? 0) + (iWon ? 1 : 0);
+      final losses =
+          ((prevStats['losses'] as num?)?.toInt() ?? 0) + (iWon ? 0 : 1);
+      final draws = (prevStats['draws'] as num?)?.toInt() ?? 0;
+      nextTournaments =
+          ((prevStats['tournamentsWon'] as num?)?.toInt() ?? 0) +
+              (iWon ? 1 : 0);
+      final currentStreak = iWon
+          ? ((prevStats['currentStreak'] as num?)?.toInt() ?? 0) + 1
+          : 0;
+      final prevBest = (prevStats['bestStreak'] as num?)?.toInt() ?? 0;
+      final bestStreak = currentStreak > prevBest ? currentStreak : prevBest;
+      nextBlitzWins = ((prevStats['blitzWins'] as num?)?.toInt() ?? 0) +
+          (iWon && room.isBlitz ? 1 : 0);
+      nextMegaWins = ((prevStats['megaWins'] as num?)?.toInt() ?? 0) +
+          (iWon && room.size >= 5 ? 1 : 0);
+      final trophyCount =
+          ((prevStats['trophyCount'] as num?)?.toInt() ?? 0) + (iWon ? 1 : 0);
+
+      // 1. Mark processed for this user (prevents duplicate counting forever).
+      tx.set(processedRef, {
+        'roomId': room.code,
+        'processedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 2. Update user's stats document.
+      tx.set(statsRef, {
+        'gamesPlayed': gamesPlayed,
+        'wins': nextWins,
+        'losses': losses,
+        'draws': draws,
+        'tournamentsWon': nextTournaments,
+        'currentStreak': currentStreak,
+        'bestStreak': bestStreak,
+        'blitzWins': nextBlitzWins,
+        'megaWins': nextMegaWins,
+        'trophyCount': trophyCount,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 3. Award Melow Cup Trophy if this user is the verified room champion.
+      if (iWon) {
+        final trophyId = 'cup_$matchId';
+        tx.set(
+          _db.collection('users').doc(myUid).collection('trophies').doc(trophyId),
+          {
+            'trophyId': trophyId,
+            'matchId': matchId,
+            'roomId': room.code,
+            'title':
+                'Melow Cup (${room.size}×${room.size} ${room.isBlitz ? 'Blitz' : 'Classic'})',
+            'awardedAt': FieldValue.serverTimestamp(),
+          },
+        );
+      }
+
+      // 4. Update user's leaderboard entry.
+      tx.set(leaderboardRef, {
+        'publicNickname': userData['nickname'] ?? room.playerName(mySide),
+        'avatarId': userData['avatarId'] ?? room.playerAvatar(mySide),
+        if (userData['photoBase64'] is String)
+          'photoBase64': userData['photoBase64'],
+        'wins': nextWins,
+        'tournamentsWon': nextTournaments,
+        'bestStreak': bestStreak,
+        'blitzWins': nextBlitzWins,
+        'optIn': userData['leaderboardOptIn'] != false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 5. Winner creates the shared immutable match summary & increments rivalry once.
+      if (iWon && !matchSnap.exists) {
+        tx.set(matchRef, {
+          'roomId': room.code,
+          'players': [room.hostId, room.guestId],
+          'playerNames': {
+            room.hostId: room.hostName,
+            room.guestId: room.guestName,
+          },
+          'gameMode': room.gameMode.id,
+          'boardSize': room.size,
+          'hostWins': room.hostWins,
+          'guestWins': room.guestWins,
+          'draws': room.draws,
+          'finalWinnerUid': winnerUid,
+          'finalStatus': 'won',
+          'completedAt': FieldValue.serverTimestamp(),
+          'processedAt': FieldValue.serverTimestamp(),
+        });
+
+        final prevWinsMap = Map<String, dynamic>.from(
+          prevRival['winsByPlayer'] as Map? ?? const {},
+        );
+        final hostRivalWins =
+            ((prevWinsMap[room.hostId] as num?)?.toInt() ?? 0) +
+                (winnerUid == room.hostId ? 1 : 0);
+        final guestRivalWins =
+            ((prevWinsMap[room.guestId] as num?)?.toInt() ?? 0) +
+                (winnerUid == room.guestId ? 1 : 0);
+        nextRivalryTotal =
+            ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) + 1;
+        final prevStreakOwner =
+            prevRival['currentStreakOwner'] as String? ?? '';
+        final nextRivalStreak = prevStreakOwner == winnerUid
+            ? ((prevRival['currentStreak'] as num?)?.toInt() ?? 0) + 1
+            : 1;
+        final prevRivalBest = (prevRival['bestStreak'] as num?)?.toInt() ?? 0;
+
+        tx.set(rivalryRef, {
+          'playerUids': [room.hostId, room.guestId]..sort(),
+          'winsByPlayer': {
+            room.hostId: hostRivalWins,
+            room.guestId: guestRivalWins,
+          },
+          'draws': (prevRival['draws'] as num?)?.toInt() ?? 0,
+          'totalMatches': nextRivalryTotal,
+          'currentStreakOwner': winnerUid,
+          'currentStreak': nextRivalStreak,
+          'bestStreak': nextRivalStreak > prevRivalBest
+              ? nextRivalStreak
+              : prevRivalBest,
+          'lastMatchAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        nextRivalryTotal =
+            ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) +
+                (opponentUid.isNotEmpty ? 1 : 0);
+      }
+    });
+
+    // 6. Update deterministic achievements progress & unlocks (preserving prior unlocks).
+    try {
+      final achCol = _db.collection('users').doc(myUid).collection('achievements');
+      final existingSnap = await achCol.get();
+      final existingUnlocked = <String>{
+        for (final doc in existingSnap.docs)
+          if (doc.data()['unlockedAt'] != null) doc.id,
+      };
+
+      final progressMap = AchievementEvaluator.computeProgress(
+        AchievementEvaluationInput(
+          totalWins: nextWins,
+          tournamentsWon: nextTournaments,
+          blitzWins: nextBlitzWins,
+          megaWins: nextMegaWins,
+          maxRivalryMatches: nextRivalryTotal,
+          wonWithoutDroppingRound:
+              wonCleanSweep || existingUnlocked.contains('perfect_match'),
+          wonAfterTrailing: existingUnlocked.contains('comeback_king'),
+        ),
+      );
+
+      final batch = _db.batch();
+      for (final def in achievementsCatalog) {
+        final prog = progressMap[def.id] ?? 0;
+        final unlocked = prog >= def.target || existingUnlocked.contains(def.id);
+        final payload = <String, dynamic>{
+          'achievementId': def.id,
+          'progress': unlocked ? def.target : prog,
+          'verified': true,
+        };
+        if (unlocked && !existingUnlocked.contains(def.id)) {
+          payload['unlockedAt'] = FieldValue.serverTimestamp();
+        }
+        batch.set(achCol.doc(def.id), payload, SetOptions(merge: true));
+      }
+      await batch.commit();
+    } catch (_) {}
+  }
+
+  Future<void> _tryCloudFinalizeOrLocal(String code) async {
+    try {
+      final callable = _functions.httpsCallable('finalizeMatch');
+      await callable.call({'roomId': code});
+      return;
+    } catch (_) {}
+    final snap = await _roomRef(code).get();
+    if (snap.exists && snap.data() != null) {
+      await recordFinishedMatchForCurrentUser(GameRoom.fromFirestore(snap));
+    }
+  }
+
   Future<void> startNextRound(String code) async {
     final uid = currentUid;
     final ref = _roomRef(code);
@@ -382,7 +614,6 @@ class GameRepository {
     });
   }
 
-  /// Starts a fresh best-of tournament rematch in the same room.
   Future<void> startRematch(String code) async {
     final uid = currentUid;
     final ref = _roomRef(code);
@@ -420,7 +651,6 @@ class GameRepository {
     });
   }
 
-  /// Host proposes spinning the Random Challenge Wheel before Round 1 starts.
   Future<void> proposeChallengeWheel(String code) async {
     final uid = currentUid;
     final ref = _roomRef(code);
@@ -450,8 +680,6 @@ class GameRepository {
     });
   }
 
-  /// Guest accepts the Challenge Wheel, atomically determining & locking the
-  /// shared authoritative spin result once for both players.
   Future<void> respondChallengeWheel(String code, {required bool accept}) async {
     final uid = currentUid;
     final ref = _roomRef(code);
@@ -477,7 +705,6 @@ class GameRepository {
         return;
       }
 
-      // Single authoritative random pick shared with both clients.
       final options = ChallengeWheelOption.values;
       final chosen =
           options[DateTime.now().microsecondsSinceEpoch % options.length];
@@ -525,7 +752,6 @@ class GameRepository {
     });
   }
 
-  /// Marks that the current player voluntarily left the room.
   Future<void> leaveRoom(String code) async {
     final uid = maybeCurrentUid;
     if (uid == null) return;
@@ -547,12 +773,9 @@ class GameRepository {
           });
         }
       });
-    } catch (_) {
-      // Do not trap user on screen if offline when leaving.
-    }
+    } catch (_) {}
   }
 
-  /// Sends a room-scoped live emoji reaction or quick taunt with spam cooldown.
   Future<void> sendReaction({
     required String code,
     required String kind,
@@ -579,10 +802,14 @@ class GameRepository {
     });
   }
 
-  /// Sends a room chat message configured to expire after 24 hours.
-  Future<void> sendChatMessage(String code, String text) async {
+  Future<void> sendChatMessage(
+    String code,
+    String text, {
+    String? imageBase64,
+  }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || trimmed.length > 280) return;
+    final hasImage = imageBase64 != null && imageBase64.isNotEmpty;
+    if ((trimmed.isEmpty && !hasImage) || trimmed.length > 280) return;
     final uid = currentUid;
     final snap = await _roomRef(code).get();
     final d = snap.data();
@@ -592,21 +819,11 @@ class GameRepository {
     await _roomRef(code).collection('messages').add({
       'uid': uid,
       'text': trimmed,
+      if (hasImage) 'imageBase64': imageBase64,
       'createdAt': FieldValue.serverTimestamp(),
       'expireAt': Timestamp.fromDate(
         DateTime.now().add(const Duration(hours: 24)),
       ),
     });
-  }
-
-  /// Calls the trusted `finalizeMatch` Cloud Function idempotently so server
-  /// records verified stats, achievements, trophies, rivalries & leaderboards.
-  Future<void> notifyMatchFinished(String code) async {
-    try {
-      final callable = _functions.httpsCallable('finalizeMatch');
-      await callable.call({'roomId': code});
-    } catch (_) {
-      // Safe no-op if Cloud Functions are not yet deployed (e.g. Spark tier).
-    }
   }
 }

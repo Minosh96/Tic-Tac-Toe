@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ===============================================================
-// Assumed Data Model — Melow Tic Tac Toe v2.0
+// Assumed Data Model — Melow Tic Tac Toe v3.0
 // ===============================================================
 //
 // Collection: rooms/{roomId}
@@ -42,7 +42,8 @@ rules_version = '2';
 // Subcollection: rooms/{roomId}/messages/{messageId}
 // Fields:
 //   - uid: string (required, == auth.uid)
-//   - text: string (required, 1..280)
+//   - text: string (optional, nullable, 0..280; required non-empty if imageBase64 absent/empty)
+//   - imageBase64: string (optional, nullable, 0..320000; required non-empty if text absent/empty)
 //   - createdAt: timestamp (required, == request.time)
 //   - expireAt: timestamp (required, > request.time && < request.time + 25h)
 //
@@ -58,6 +59,7 @@ rules_version = '2';
 // Fields:
 //   - nickname: string (required, 1..20)
 //   - avatarId: string (required, 1..32)
+//   - photoBase64: string (optional, nullable, 0..140000 — compressed 256px gallery avatar)
 //   - preferredEmoji: string (required, 1..16)
 //   - friendCode: string (optional, 6..12, immutable once set)
 //   - publicProfileEnabled: bool (required)
@@ -74,6 +76,7 @@ rules_version = '2';
 //   - friendUid: string (required, == friendUid, != uid, immutable)
 //   - nickname: string (required, 1..20)
 //   - avatarId: string (required, 1..32)
+//   - photoBase64: string (optional, nullable, 0..140000)
 //   - since: timestamp (required, immutable)
 //   - status: string (required, 'accepted' | 'pending'; must be 'accepted' when written by friendUid)
 //
@@ -85,6 +88,27 @@ rules_version = '2';
 //   - avatarId: string (optional, nullable, 0..32)
 //   - reason: string (optional, nullable, 0..300)
 //   - createdAt: timestamp (optional, immutable once set)
+//
+// Subcollection: users/{uid}/processedMatches/{matchId} (Immutable idempotency ledger)
+// Fields:
+//   - roomId: string (required, 6 chars)
+//   - processedAt: timestamp (required, == request.time)
+//   - matchId: string (optional, == matchId)
+//
+// Subcollection: users/{uid}/achievements/{achievementId}
+// Fields:
+//   - achievementId: string (required, == achievementId, immutable)
+//   - progress: int (required, 0..100)
+//   - verified: bool (required)
+//   - unlockedAt: timestamp (optional, nullable)
+//
+// Subcollection: users/{uid}/trophies/{trophyId} (Immutable, verified against finished room champion)
+// Fields:
+//   - trophyId: string (required, == trophyId)
+//   - matchId: string (required, 1..128)
+//   - roomId: string (required, 6 chars, references finished room where uid is champion)
+//   - title: string (required, 1..80)
+//   - awardedAt: timestamp (required, == request.time)
 //
 // Collection: friendCodes/{code}
 // Document ID: 6..12 character friend code
@@ -127,13 +151,82 @@ rules_version = '2';
 //   - reason: string (required, 1..300)
 //   - createdAt: timestamp (required, == request.time)
 //
-// Server-Authoritative Collections (NO client writes — Admin SDK / Cloud Functions only):
-//   - stats/{uid}
-//   - users/{uid}/achievements/{achievementId}
-//   - users/{uid}/trophies/{trophyId}
-//   - matches/{matchId} (fields include players: list<uid>)
-//   - rivalries/{rivalryId} (fields include playerUids: list<uid>)
-//   - leaderboardEntries/{uid} (fields include optIn: bool)
+// Collection: stats/{uid} (Owner-writable with bounded post-match deltas, Spark-compatible)
+// Fields:
+//   - gamesPlayed, wins, losses, draws, tournamentsWon, currentStreak,
+//     bestStreak, blitzWins, megaWins, trophyCount: int (0..1000000; +0..1 per update)
+//   - updatedAt: timestamp (optional, nullable)
+//
+// Collection: matches/{matchId} (Immutable, verified against finished room membership)
+// Fields:
+//   - roomId: string (required, 6 chars)
+//   - players: list<string> (required, size == 2, matches room hostId & guestId)
+//   - playerNames: map (optional, nullable, size <= 4)
+//   - gameMode: string (required, 'classic' | 'blitz')
+//   - boardSize: int (required, 3 | 4 | 5 | 6)
+//   - hostWins: int (required, 0..10)
+//   - guestWins: int (required, 0..10)
+//   - draws: int (required, 0..200)
+//   - finalWinnerUid: string (required, 0..128)
+//   - finalStatus: string (required, 'won' | 'draw')
+//   - completedAt: timestamp (required)
+//   - processedAt: timestamp (optional, nullable)
+//
+// Collection: rivalries/{rivalryId} (Participant-writable with immutable playerUids & bounded deltas)
+// Fields:
+//   - playerUids: list<string> (required, size == 2, immutable)
+//   - winsByPlayer: map (optional, size <= 2, keys subset of playerUids)
+//   - draws, totalMatches, currentStreak, bestStreak: int (0..1000000; totalMatches +0..1 on update)
+//   - currentStreakOwner: string (optional, nullable, 0..128)
+//   - lastMatchAt: timestamp (optional, nullable)
+//
+// Collection: leaderboardEntries/{uid} (Owner-writable with bounded deltas)
+// Fields:
+//   - publicNickname: string (required, 1..20)
+//   - avatarId: string (required, 1..32)
+//   - photoBase64: string (optional, nullable, 0..140000)
+//   - wins, tournamentsWon, bestStreak, blitzWins: int (0..1000000; +0..1 on update)
+//   - optIn: bool (required)
+//   - updatedAt: timestamp (optional, nullable)
+//
+// Collection: chats/{chatId} (Direct 1-on-1 friend chat)
+// Fields:
+//   - participants: list<string> (required, size == 2, immutable)
+//   - lastMessage: string (optional, nullable, 0..500)
+//   - lastSenderUid: string (optional, nullable, 0..128)
+//   - lastMessageAt: timestamp (optional, nullable)
+//   - unreadBy: list (<=2 UIDs) | map (<=2 keys) | string (0..128) (optional, nullable)
+//   - updatedAt: timestamp (optional, nullable)
+//
+// Subcollection: chats/{chatId}/messages/{messageId}
+// Fields:
+//   - senderUid: string (required, == auth.uid)
+//   - senderName: string (optional, nullable, 0..20)
+//   - text: string (optional, nullable, 0..500; required non-empty if imageBase64 absent/empty)
+//   - imageBase64: string (optional, nullable, 0..320000; required non-empty if text absent/empty)
+//   - createdAt: timestamp (required, == request.time)
+//
+// Collection: calls/{callId} (WebRTC P2P voice call signaling)
+// Fields:
+//   - callerUid: string (required, == auth.uid on create, immutable)
+//   - calleeUid: string (required, != callerUid, immutable)
+//   - callerName: string (required, 1..20)
+//   - callerAvatar: string (optional, nullable, 0..32)
+//   - calleeName: string (optional, nullable, 0..20)
+//   - roomId: string (optional, nullable, 0..6)
+//   - status: string (required, 'ringing' on create -> 'active'|'ended'|'declined'|'missed')
+//   - offer: map (optional, nullable, keys subset of ['type', 'sdp'])
+//   - answer: map (optional, nullable, keys subset of ['type', 'sdp'])
+//   - createdAt: timestamp (required, == request.time on create, immutable)
+//   - updatedAt: timestamp (optional, nullable)
+//
+// Subcollections: calls/{callId}/offerCandidates/{candidateId}
+//                 calls/{callId}/answerCandidates/{candidateId}
+// Fields:
+//   - candidate: string (required, 0..2048)
+//   - sdpMid: string (optional, nullable, 0..64)
+//   - sdpMLineIndex: int (optional, nullable, 0..64)
+//   - createdAt: timestamp (optional, nullable)
 //
 // ===============================================================
 
@@ -148,34 +241,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAuthenticated() {
-      return signedIn();
-    }
-
     function isOwner(userId) {
       return signedIn() && request.auth.uid == userId;
     }
 
     function isDocOwner() {
       return signedIn() && resource.data.uid == request.auth.uid;
-    }
-
-    function uidUnchanged() {
-      return !('uid' in request.resource.data) ||
-        request.resource.data.uid == request.auth.uid;
-    }
-
-    function uidNotModified() {
-      return !('uid' in request.resource.data) ||
-        request.resource.data.uid == resource.data.uid;
-    }
-
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
     }
 
     function areImmutableFieldsUnchanged(fields) {
@@ -204,11 +275,57 @@ service cloud.firestore {
         data[field] is bool;
     }
 
+    function isNonNegInt(val, maxVal) {
+      return val is int && val >= 0 && val <= maxVal;
+    }
+
+    function isOptionalNonNegInt(data, field, maxVal) {
+      return !(field in data) || isNonNegInt(data[field], maxVal);
+    }
+
+    function isBoundedDelta(nextVal, prevVal, minDelta, maxDelta) {
+      return nextVal >= prevVal + minDelta && nextVal <= prevVal + maxDelta;
+    }
+
+    function isValidUidPair(val) {
+      return val is list &&
+        val.size() == 2 &&
+        isStringLen(val[0], 1, 128) &&
+        isStringLen(val[1], 1, 128) &&
+        val[0] != val[1];
+    }
+
+    function isValidUidListMax2(val) {
+      return val is list && (
+        val.size() == 0 ||
+        (val.size() == 1 && isStringLen(val[0], 1, 128)) ||
+        (val.size() == 2 && isStringLen(val[0], 1, 128) && isStringLen(val[1], 1, 128))
+      );
+    }
+
+    function isValidUnreadBy(d) {
+      return !('unreadBy' in d) ||
+        d.unreadBy == null ||
+        isStringLen(d.unreadBy, 0, 128) ||
+        isValidUidListMax2(d.unreadBy) ||
+        (d.unreadBy is map && d.unreadBy.size() <= 2);
+    }
+
     function isOptionalWheelPayload(data, field) {
       return !(field in data) ||
         data[field] == null ||
         (data[field] is map && data[field].size() <= 16) ||
         (data[field] is string && data[field].size() <= 100);
+    }
+
+    function isOptionalNullableSdpMap(data, field) {
+      return !(field in data) ||
+        data[field] == null || (
+          data[field] is map &&
+          data[field].keys().hasOnly(['type', 'sdp']) &&
+          isOptionalNullableString(data[field], 'type', 1, 32) &&
+          isOptionalNullableString(data[field], 'sdp', 0, 32768)
+        );
     }
 
     function isRoomMember(d) {
@@ -221,6 +338,32 @@ service cloud.firestore {
         isRoomMember(get(/databases/$(database)/documents/rooms/$(roomId)).data);
     }
 
+    function isRoomChampionData(roomData, uid) {
+      return roomData.status == 'finished' && (
+        (roomData.hostId == uid && roomData.champion == 'h') ||
+        (roomData.guestId == uid && roomData.champion == 'g')
+      );
+    }
+
+    function isFinishedRoomChampion(roomId, uid) {
+      return isStringLen(roomId, 6, 6) &&
+        exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+        isRoomChampionData(get(/databases/$(database)/documents/rooms/$(roomId)).data, uid);
+    }
+
+    function isFinishedRoomDataForMatch(roomData, matchData) {
+      return roomData.status == 'finished' &&
+        isRoomMember(roomData) &&
+        roomData.hostId in matchData.players &&
+        roomData.guestId in matchData.players;
+    }
+
+    function isFinishedRoomMemberMatch(d) {
+      return isStringLen(d.roomId, 6, 6) &&
+        exists(/databases/$(database)/documents/rooms/$(d.roomId)) &&
+        isFinishedRoomDataForMatch(get(/databases/$(database)/documents/rooms/$(d.roomId)).data, d);
+    }
+
     function isPublicProfile(uid) {
       return exists(/databases/$(database)/documents/users/$(uid)) &&
         get(/databases/$(database)/documents/users/$(uid)).data.publicProfileEnabled == true;
@@ -228,6 +371,43 @@ service cloud.firestore {
 
     function isBlockedBy(targetUid, actorUid) {
       return exists(/databases/$(database)/documents/users/$(targetUid)/blocked/$(actorUid));
+    }
+
+    function otherParticipant(participants) {
+      return participants[0] == request.auth.uid ? participants[1] : participants[0];
+    }
+
+    function chatExistsAndParticipant(chatId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/chats/$(chatId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
+
+    function callExistsAndParticipant(callId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/calls/$(callId)) && (
+          get(/databases/$(database)/documents/calls/$(callId)).data.callerUid == request.auth.uid ||
+          get(/databases/$(database)/documents/calls/$(callId)).data.calleeUid == request.auth.uid
+        );
+    }
+
+    function isLeaderboardBoundedByStats(d, s) {
+      return d.get('wins', 0) <= s.get('wins', 0) + 1 &&
+        d.get('tournamentsWon', 0) <= s.get('tournamentsWon', 0) + 1 &&
+        d.get('bestStreak', 0) <= s.get('bestStreak', 0) + 1 &&
+        d.get('blitzWins', 0) <= s.get('blitzWins', 0) + 1;
+    }
+
+    function isValidLeaderboardCreateCounts(uid, d) {
+      return (
+        d.get('wins', 0) <= 1 &&
+        d.get('tournamentsWon', 0) <= 1 &&
+        d.get('bestStreak', 0) <= 1 &&
+        d.get('blitzWins', 0) <= 1
+      ) || (
+        exists(/databases/$(database)/documents/stats/$(uid)) &&
+        isLeaderboardBoundedByStats(d, get(/databases/$(database)/documents/stats/$(uid)).data)
+      );
     }
 
     // ===============================================================
@@ -299,10 +479,15 @@ service cloud.firestore {
     }
 
     function isValidChatMessage(d) {
-      return d.keys().hasOnly(['uid', 'text', 'createdAt', 'expireAt']) &&
-        d.keys().hasAll(['uid', 'text', 'createdAt', 'expireAt']) &&
+      return d.keys().hasOnly(['uid', 'text', 'imageBase64', 'createdAt', 'expireAt']) &&
+        d.keys().hasAll(['uid', 'createdAt', 'expireAt']) &&
         d.uid == request.auth.uid &&
-        isStringLen(d.text, 1, 280) &&
+        isOptionalNullableString(d, 'text', 0, 280) &&
+        isOptionalNullableString(d, 'imageBase64', 0, 320000) &&
+        (
+          ('text' in d && d.text is string && d.text.size() > 0) ||
+          ('imageBase64' in d && d.imageBase64 is string && d.imageBase64.size() > 0)
+        ) &&
         d.createdAt == request.time &&
         d.expireAt is timestamp &&
         d.expireAt > request.time &&
@@ -323,7 +508,7 @@ service cloud.firestore {
 
     function isValidUserProfile(d) {
       return d.keys().hasOnly([
-          'nickname', 'avatarId', 'preferredEmoji', 'friendCode',
+          'nickname', 'avatarId', 'photoBase64', 'preferredEmoji', 'friendCode',
           'publicProfileEnabled', 'leaderboardOptIn', 'createdAt', 'updatedAt'
         ]) &&
         d.keys().hasAll([
@@ -332,6 +517,7 @@ service cloud.firestore {
         ]) &&
         isStringLen(d.nickname, 1, 20) &&
         isStringLen(d.avatarId, 1, 32) &&
+        isOptionalNullableString(d, 'photoBase64', 0, 140000) &&
         isStringLen(d.preferredEmoji, 1, 16) &&
         (!('friendCode' in d) || d.friendCode == null || isStringLen(d.friendCode, 6, 12)) &&
         d.publicProfileEnabled is bool &&
@@ -349,13 +535,14 @@ service cloud.firestore {
     }
 
     function isValidFriendEntry(d, ownerUid, friendUid) {
-      return d.keys().hasOnly(['friendUid', 'nickname', 'avatarId', 'since', 'status']) &&
+      return d.keys().hasOnly(['friendUid', 'nickname', 'avatarId', 'photoBase64', 'since', 'status']) &&
         d.keys().hasAll(['friendUid', 'nickname', 'avatarId', 'since', 'status']) &&
         d.friendUid == friendUid &&
         friendUid != ownerUid &&
         isStringLen(d.friendUid, 1, 128) &&
         isStringLen(d.nickname, 1, 20) &&
         isStringLen(d.avatarId, 1, 32) &&
+        isOptionalNullableString(d, 'photoBase64', 0, 140000) &&
         d.since is timestamp &&
         d.status in ['accepted', 'pending'];
     }
@@ -370,6 +557,36 @@ service cloud.firestore {
         isOptionalNullableString(d, 'avatarId', 0, 32) &&
         isOptionalNullableString(d, 'reason', 0, 300) &&
         isOptionalNullableTimestamp(d, 'createdAt');
+    }
+
+    function isValidProcessedMatch(d, matchId) {
+      return isStringLen(matchId, 1, 128) &&
+        d.keys().hasOnly(['roomId', 'processedAt', 'matchId']) &&
+        d.keys().hasAll(['roomId', 'processedAt']) &&
+        isStringLen(d.roomId, 6, 6) &&
+        (!('matchId' in d) || d.matchId == matchId) &&
+        d.processedAt == request.time;
+    }
+
+    function isValidAchievement(d, achievementId) {
+      return isStringLen(achievementId, 1, 64) &&
+        d.keys().hasOnly(['achievementId', 'progress', 'verified', 'unlockedAt']) &&
+        d.keys().hasAll(['achievementId', 'progress', 'verified']) &&
+        d.achievementId == achievementId &&
+        d.progress is int && d.progress >= 0 && d.progress <= 100 &&
+        d.verified is bool &&
+        isOptionalNullableTimestamp(d, 'unlockedAt');
+    }
+
+    function isValidTrophy(d, trophyId) {
+      return isStringLen(trophyId, 1, 128) &&
+        d.keys().hasOnly(['trophyId', 'matchId', 'roomId', 'title', 'awardedAt']) &&
+        d.keys().hasAll(['trophyId', 'matchId', 'roomId', 'title', 'awardedAt']) &&
+        d.trophyId == trophyId &&
+        isStringLen(d.matchId, 1, 128) &&
+        isStringLen(d.roomId, 6, 6) &&
+        isStringLen(d.title, 1, 80) &&
+        d.awardedAt == request.time;
     }
 
     function isValidFriendCode(d, code) {
@@ -436,6 +653,186 @@ service cloud.firestore {
         d.reportedUid != request.auth.uid &&
         isStringLen(d.reason, 1, 300) &&
         d.createdAt == request.time;
+    }
+
+    function isValidPlayerStats(d) {
+      return d.keys().hasOnly([
+          'gamesPlayed', 'wins', 'losses', 'draws', 'tournamentsWon',
+          'currentStreak', 'bestStreak', 'blitzWins', 'megaWins',
+          'trophyCount', 'updatedAt'
+        ]) &&
+        d.keys().size() >= 1 &&
+        isOptionalNonNegInt(d, 'gamesPlayed', 1000000) &&
+        isOptionalNonNegInt(d, 'wins', 1000000) &&
+        isOptionalNonNegInt(d, 'losses', 1000000) &&
+        isOptionalNonNegInt(d, 'draws', 1000000) &&
+        isOptionalNonNegInt(d, 'tournamentsWon', 1000000) &&
+        isOptionalNonNegInt(d, 'currentStreak', 1000000) &&
+        isOptionalNonNegInt(d, 'bestStreak', 1000000) &&
+        isOptionalNonNegInt(d, 'blitzWins', 1000000) &&
+        isOptionalNonNegInt(d, 'megaWins', 1000000) &&
+        isOptionalNonNegInt(d, 'trophyCount', 1000000) &&
+        d.get('bestStreak', 0) >= d.get('currentStreak', 0) &&
+        isOptionalNullableTimestamp(d, 'updatedAt');
+    }
+
+    function isValidPlayerStatsCreate(d) {
+      return d.get('gamesPlayed', 0) <= 1 &&
+        d.get('wins', 0) <= 1 &&
+        d.get('losses', 0) <= 1 &&
+        d.get('draws', 0) <= 1 &&
+        d.get('tournamentsWon', 0) <= 1 &&
+        d.get('currentStreak', 0) <= 1 &&
+        d.get('bestStreak', 0) <= 1 &&
+        d.get('blitzWins', 0) <= 1 &&
+        d.get('megaWins', 0) <= 1 &&
+        d.get('trophyCount', 0) <= 1;
+    }
+
+    function isValidPlayerStatsUpdate(next, prev) {
+      return isBoundedDelta(next.get('gamesPlayed', 0), prev.get('gamesPlayed', 0), 0, 1) &&
+        isBoundedDelta(next.get('wins', 0), prev.get('wins', 0), 0, 1) &&
+        isBoundedDelta(next.get('losses', 0), prev.get('losses', 0), 0, 1) &&
+        isBoundedDelta(next.get('draws', 0), prev.get('draws', 0), 0, 1) &&
+        isBoundedDelta(next.get('tournamentsWon', 0), prev.get('tournamentsWon', 0), 0, 1) &&
+        isBoundedDelta(next.get('blitzWins', 0), prev.get('blitzWins', 0), 0, 1) &&
+        isBoundedDelta(next.get('megaWins', 0), prev.get('megaWins', 0), 0, 1) &&
+        isBoundedDelta(next.get('trophyCount', 0), prev.get('trophyCount', 0), 0, 1) &&
+        isBoundedDelta(next.get('bestStreak', 0), prev.get('bestStreak', 0), 0, 1) &&
+        (next.get('currentStreak', 0) == 0 ||
+          isBoundedDelta(next.get('currentStreak', 0), prev.get('currentStreak', 0), 0, 1));
+    }
+
+    function isValidMatch(d, matchId) {
+      return isStringLen(matchId, 1, 128) &&
+        d.keys().hasOnly([
+          'roomId', 'players', 'playerNames', 'gameMode', 'boardSize',
+          'hostWins', 'guestWins', 'draws', 'finalWinnerUid', 'finalStatus',
+          'completedAt', 'processedAt'
+        ]) &&
+        d.keys().hasAll([
+          'roomId', 'players', 'gameMode', 'boardSize',
+          'hostWins', 'guestWins', 'draws', 'finalWinnerUid', 'finalStatus',
+          'completedAt'
+        ]) &&
+        isStringLen(d.roomId, 6, 6) &&
+        isValidUidPair(d.players) &&
+        (!('playerNames' in d) || d.playerNames == null || (d.playerNames is map && d.playerNames.size() <= 4)) &&
+        d.gameMode in ['classic', 'blitz'] &&
+        d.boardSize is int && d.boardSize in [3, 4, 5, 6] &&
+        isNonNegInt(d.hostWins, 10) &&
+        isNonNegInt(d.guestWins, 10) &&
+        isNonNegInt(d.draws, 200) &&
+        isStringLen(d.finalWinnerUid, 0, 128) &&
+        d.finalStatus in ['won', 'draw'] &&
+        d.completedAt is timestamp &&
+        isOptionalNullableTimestamp(d, 'processedAt');
+    }
+
+    function isValidRivalry(d, rivalryId) {
+      return isStringLen(rivalryId, 3, 260) &&
+        d.keys().hasOnly([
+          'playerUids', 'winsByPlayer', 'draws', 'totalMatches',
+          'currentStreakOwner', 'currentStreak', 'bestStreak', 'lastMatchAt'
+        ]) &&
+        d.keys().hasAll(['playerUids', 'totalMatches']) &&
+        isValidUidPair(d.playerUids) &&
+        (!('winsByPlayer' in d) || (
+          d.winsByPlayer is map &&
+          d.winsByPlayer.size() <= 2 &&
+          d.winsByPlayer.keys().hasOnly(d.playerUids)
+        )) &&
+        isOptionalNonNegInt(d, 'draws', 1000000) &&
+        isNonNegInt(d.totalMatches, 1000000) &&
+        isOptionalNullableString(d, 'currentStreakOwner', 0, 128) &&
+        isOptionalNonNegInt(d, 'currentStreak', 1000000) &&
+        isOptionalNonNegInt(d, 'bestStreak', 1000000) &&
+        d.get('bestStreak', 0) >= d.get('currentStreak', 0) &&
+        isOptionalNullableTimestamp(d, 'lastMatchAt');
+    }
+
+    function isValidLeaderboardEntry(d) {
+      return d.keys().hasOnly([
+          'publicNickname', 'avatarId', 'photoBase64',
+          'wins', 'tournamentsWon', 'bestStreak', 'blitzWins',
+          'optIn', 'updatedAt'
+        ]) &&
+        d.keys().hasAll(['publicNickname', 'avatarId', 'optIn']) &&
+        isStringLen(d.publicNickname, 1, 20) &&
+        isStringLen(d.avatarId, 1, 32) &&
+        isOptionalNullableString(d, 'photoBase64', 0, 140000) &&
+        isOptionalNonNegInt(d, 'wins', 1000000) &&
+        isOptionalNonNegInt(d, 'tournamentsWon', 1000000) &&
+        isOptionalNonNegInt(d, 'bestStreak', 1000000) &&
+        isOptionalNonNegInt(d, 'blitzWins', 1000000) &&
+        d.optIn is bool &&
+        isOptionalNullableTimestamp(d, 'updatedAt');
+    }
+
+    function isValidChat(d, chatId) {
+      return isStringLen(chatId, 3, 260) &&
+        d.keys().hasOnly([
+          'participants', 'lastMessage', 'lastSenderUid',
+          'lastMessageAt', 'unreadBy', 'updatedAt'
+        ]) &&
+        d.keys().hasAll(['participants']) &&
+        isValidUidPair(d.participants) &&
+        isOptionalNullableString(d, 'lastMessage', 0, 500) &&
+        isOptionalNullableString(d, 'lastSenderUid', 0, 128) &&
+        (!('lastSenderUid' in d) || d.lastSenderUid == null || d.lastSenderUid == '' ||
+          d.lastSenderUid in d.participants) &&
+        isOptionalNullableTimestamp(d, 'lastMessageAt') &&
+        isValidUnreadBy(d) &&
+        isOptionalNullableTimestamp(d, 'updatedAt');
+    }
+
+    function isValidDirectMessage(d) {
+      return d.keys().hasOnly(['senderUid', 'senderName', 'text', 'imageBase64', 'createdAt']) &&
+        d.keys().hasAll(['senderUid', 'createdAt']) &&
+        d.senderUid == request.auth.uid &&
+        isOptionalNullableString(d, 'senderName', 0, 20) &&
+        isOptionalNullableString(d, 'text', 0, 500) &&
+        isOptionalNullableString(d, 'imageBase64', 0, 320000) &&
+        (
+          ('text' in d && d.text is string && d.text.size() > 0) ||
+          ('imageBase64' in d && d.imageBase64 is string && d.imageBase64.size() > 0)
+        ) &&
+        d.createdAt == request.time;
+    }
+
+    function isValidCall(d) {
+      return d.keys().hasOnly([
+          'callerUid', 'calleeUid', 'callerName', 'callerAvatar', 'calleeName',
+          'roomId', 'status', 'offer', 'answer', 'createdAt', 'updatedAt'
+        ]) &&
+        d.keys().hasAll(['callerUid', 'calleeUid', 'callerName', 'status', 'createdAt']) &&
+        isStringLen(d.callerUid, 1, 128) &&
+        isStringLen(d.calleeUid, 1, 128) &&
+        d.calleeUid != d.callerUid &&
+        isStringLen(d.callerName, 1, 20) &&
+        isOptionalNullableString(d, 'callerAvatar', 0, 32) &&
+        isOptionalNullableString(d, 'calleeName', 0, 20) &&
+        isOptionalNullableString(d, 'roomId', 0, 6) &&
+        d.status in ['ringing', 'active', 'ended', 'declined', 'missed'] &&
+        isOptionalNullableSdpMap(d, 'offer') &&
+        isOptionalNullableSdpMap(d, 'answer') &&
+        d.createdAt is timestamp &&
+        isOptionalNullableTimestamp(d, 'updatedAt');
+    }
+
+    function isValidCallStatusTransition(prevStatus, nextStatus) {
+      return (prevStatus == 'ringing' && nextStatus in ['ringing', 'active', 'ended', 'declined', 'missed']) ||
+        (prevStatus == 'active' && nextStatus in ['active', 'ended']) ||
+        (prevStatus == nextStatus && prevStatus in ['ended', 'declined', 'missed']);
+    }
+
+    function isValidIceCandidate(d) {
+      return d.keys().hasOnly(['candidate', 'sdpMid', 'sdpMLineIndex', 'createdAt']) &&
+        d.keys().hasAll(['candidate']) &&
+        isStringLen(d.candidate, 0, 2048) &&
+        isOptionalNullableString(d, 'sdpMid', 0, 64) &&
+        (!('sdpMLineIndex' in d) || d.sdpMLineIndex == null || isNonNegInt(d.sdpMLineIndex, 64)) &&
+        isOptionalNullableTimestamp(d, 'createdAt');
     }
 
     // ===============================================================
@@ -520,7 +917,7 @@ service cloud.firestore {
 
       allow delete: if false;
 
-      // 2. Room Chat Messages (100% v1 compatible)
+      // 2. Room Chat Messages (v1 text-only compatible + v3 image sharing)
       match /messages/{messageId} {
         allow read: if roomExistsAndMember(roomId);
         allow create: if roomExistsAndMember(roomId) &&
@@ -538,7 +935,8 @@ service cloud.firestore {
     }
 
     // ===============================================================
-    // 4-7. Users, Private Settings, Friends, Blocked, Achievements & Trophies
+    // 4-7. Users, Private Settings, Friends, Blocked, Processed Matches,
+    //      Achievements & Trophies
     // ===============================================================
 
     match /users/{uid} {
@@ -615,16 +1013,32 @@ service cloud.firestore {
             ('createdAt' in request.resource.data && request.resource.data.createdAt == resource.data.createdAt));
       }
 
-      // 12a. Server-authoritative achievements
-      match /achievements/{achievementId} {
-        allow read: if isOwner(uid) || (signedIn() && isPublicProfile(uid));
-        allow write: if false;
+      // 7b. Processed Matches Ledger (Owner-only, immutable idempotency guard)
+      match /processedMatches/{matchId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) &&
+          isValidProcessedMatch(request.resource.data, matchId);
+        allow update, delete: if false;
       }
 
-      // 12b. Server-authoritative trophies
+      // 12a. Achievements (Spark-compatible owner updates + public profile reads)
+      match /achievements/{achievementId} {
+        allow read: if isOwner(uid) || (signedIn() && isPublicProfile(uid));
+        allow create: if isOwner(uid) &&
+          isValidAchievement(request.resource.data, achievementId);
+        allow update: if isOwner(uid) &&
+          isValidAchievement(request.resource.data, achievementId) &&
+          areImmutableFieldsUnchanged(['achievementId']);
+        allow delete: if false;
+      }
+
+      // 12b. Trophies (Immutable, verified against finished room champion)
       match /trophies/{trophyId} {
         allow read: if isOwner(uid) || (signedIn() && isPublicProfile(uid));
-        allow write: if false;
+        allow create: if isOwner(uid) &&
+          isValidTrophy(request.resource.data, trophyId) &&
+          isFinishedRoomChampion(request.resource.data.roomId, uid);
+        allow update, delete: if false;
       }
     }
 
@@ -745,29 +1159,150 @@ service cloud.firestore {
     }
 
     // ===============================================================
-    // 12. Strictly Server-Authoritative Collections (Admin SDK Only)
+    // 12. Verified Match Finalization, Stats, Rivalries & Leaderboards
+    //     (Spark-Compatible Client Writes with Bounded Deltas & Room Proofs)
     // ===============================================================
 
     match /stats/{uid} {
       allow get: if isOwner(uid) || (signedIn() && isPublicProfile(uid));
-      allow list, write: if false;
+      allow list: if false;
+
+      allow create: if isOwner(uid) &&
+        isValidPlayerStats(request.resource.data) &&
+        isValidPlayerStatsCreate(request.resource.data);
+
+      allow update: if isOwner(uid) &&
+        isValidPlayerStats(request.resource.data) &&
+        isValidPlayerStatsUpdate(request.resource.data, resource.data);
+
+      allow delete: if false;
     }
 
     match /matches/{matchId} {
       allow read: if signedIn() && (request.auth.uid in resource.data.players);
-      allow write: if false;
+
+      allow create: if signedIn() &&
+        isValidMatch(request.resource.data, matchId) &&
+        request.auth.uid in request.resource.data.players &&
+        isFinishedRoomMemberMatch(request.resource.data);
+
+      allow update, delete: if false;
     }
 
     match /rivalries/{rivalryId} {
       allow read: if signedIn() && (request.auth.uid in resource.data.playerUids);
-      allow write: if false;
+
+      allow create: if signedIn() &&
+        isValidRivalry(request.resource.data, rivalryId) &&
+        request.auth.uid in request.resource.data.playerUids &&
+        request.resource.data.totalMatches <= 1 &&
+        request.resource.data.get('draws', 0) <= 1 &&
+        request.resource.data.get('currentStreak', 0) <= 1 &&
+        request.resource.data.get('bestStreak', 0) <= 1;
+
+      allow update: if signedIn() &&
+        request.auth.uid in resource.data.playerUids &&
+        isValidRivalry(request.resource.data, rivalryId) &&
+        request.resource.data.playerUids == resource.data.playerUids &&
+        isBoundedDelta(request.resource.data.totalMatches, resource.data.get('totalMatches', 0), 0, 1) &&
+        isBoundedDelta(request.resource.data.get('draws', 0), resource.data.get('draws', 0), 0, 1) &&
+        isBoundedDelta(request.resource.data.get('bestStreak', 0), resource.data.get('bestStreak', 0), 0, 1) &&
+        (request.resource.data.get('currentStreak', 0) <= 1 ||
+          isBoundedDelta(request.resource.data.get('currentStreak', 0), resource.data.get('currentStreak', 0), 0, 1));
+
+      allow delete: if false;
     }
 
     match /leaderboardEntries/{uid} {
       allow read: if signedIn() && (
         request.auth.uid == uid || resource.data.optIn == true
       );
-      allow write: if false;
+
+      allow create: if isOwner(uid) &&
+        isValidLeaderboardEntry(request.resource.data) &&
+        isValidLeaderboardCreateCounts(uid, request.resource.data);
+
+      allow update: if isOwner(uid) &&
+        isValidLeaderboardEntry(request.resource.data) &&
+        isBoundedDelta(request.resource.data.get('wins', 0), resource.data.get('wins', 0), 0, 1) &&
+        isBoundedDelta(request.resource.data.get('tournamentsWon', 0), resource.data.get('tournamentsWon', 0), 0, 1) &&
+        isBoundedDelta(request.resource.data.get('blitzWins', 0), resource.data.get('blitzWins', 0), 0, 1) &&
+        isBoundedDelta(request.resource.data.get('bestStreak', 0), resource.data.get('bestStreak', 0), 0, 1);
+
+      allow delete: if false;
+    }
+
+    // ===============================================================
+    // 13. Direct 1-on-1 Friend Chat
+    // ===============================================================
+
+    match /chats/{chatId} {
+      allow get: if signedIn() && (
+        (resource == null && chatId.matches('.*' + request.auth.uid + '.*')) ||
+        (resource != null && request.auth.uid in resource.data.participants)
+      );
+      allow list: if signedIn() && (request.auth.uid in resource.data.participants);
+
+      allow create: if signedIn() &&
+        isValidChat(request.resource.data, chatId) &&
+        request.auth.uid in request.resource.data.participants &&
+        !isBlockedBy(otherParticipant(request.resource.data.participants), request.auth.uid);
+
+      allow update: if signedIn() &&
+        request.auth.uid in resource.data.participants &&
+        isValidChat(request.resource.data, chatId) &&
+        request.resource.data.participants == resource.data.participants &&
+        !isBlockedBy(otherParticipant(resource.data.participants), request.auth.uid);
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if chatExistsAndParticipant(chatId);
+        allow create: if chatExistsAndParticipant(chatId) &&
+          isValidDirectMessage(request.resource.data);
+        allow update, delete: if false;
+      }
+    }
+
+    // ===============================================================
+    // 14. WebRTC Peer-to-Peer Voice Calls
+    // ===============================================================
+
+    match /calls/{callId} {
+      allow read: if signedIn() && (
+        resource.data.callerUid == request.auth.uid ||
+        resource.data.calleeUid == request.auth.uid
+      );
+
+      allow create: if signedIn() &&
+        isValidCall(request.resource.data) &&
+        request.resource.data.callerUid == request.auth.uid &&
+        request.resource.data.calleeUid != request.auth.uid &&
+        request.resource.data.status == 'ringing' &&
+        !isBlockedBy(request.resource.data.calleeUid, request.auth.uid) &&
+        request.resource.data.createdAt == request.time;
+
+      allow update: if signedIn() &&
+        isValidCall(request.resource.data) &&
+        (resource.data.callerUid == request.auth.uid || resource.data.calleeUid == request.auth.uid) &&
+        areImmutableFieldsUnchanged(['callerUid', 'calleeUid', 'createdAt']) &&
+        isValidCallStatusTransition(resource.data.status, request.resource.data.status);
+
+      allow delete: if false;
+
+      match /offerCandidates/{candidateId} {
+        allow read: if callExistsAndParticipant(callId);
+        allow create: if callExistsAndParticipant(callId) &&
+          isValidIceCandidate(request.resource.data);
+        allow update, delete: if false;
+      }
+
+      match /answerCandidates/{candidateId} {
+        allow read: if callExistsAndParticipant(callId);
+        allow create: if callExistsAndParticipant(callId) &&
+          isValidIceCandidate(request.resource.data);
+        allow update, delete: if false;
+      }
     }
 
     // ===============================================================

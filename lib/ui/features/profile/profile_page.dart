@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/services/app_services.dart';
+import '../../../core/services/image_helper.dart';
 import '../../../domain/achievements_catalog.dart';
 import '../../../domain/game_engine.dart';
 import '../../../domain/models/social_models.dart';
 import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
+import '../../core/widgets/emoji_picker_grid.dart';
 import '../../core/widgets/footer.dart';
 import '../../core/widgets/melow_avatar.dart';
 import '../about/about_screen.dart';
 import '../settings/settings_screen.dart';
 
-/// Phase 8 Dedicated Player Profile, Verified Stats & Match History Screen.
+/// Melow v3.0 Player Profile with Gallery Photo Selection, 100+ Emoji Picker &
+/// fixed responsive Stat Cards.
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, required this.services});
 
@@ -30,9 +33,30 @@ class _ProfilePageState extends State<ProfilePage> {
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  Future<void> _quickPickGalleryPhoto(UserProfile profile) async {
+    try {
+      final base64Img = await ImageHelper.pickProfilePhotoBase64();
+      if (base64Img == null) return;
+      await widget.services.profile.updateProfile(
+        nickname: profile.nickname,
+        avatarId: profile.avatarId,
+        photoBase64: base64Img,
+        updatePhoto: true,
+        preferredEmoji: profile.preferredEmoji,
+        publicProfileEnabled: profile.publicProfileEnabled,
+        leaderboardOptIn: profile.leaderboardOptIn,
+      );
+      _snack('Profile photo updated!');
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
   Future<void> _openEditProfileSheet(UserProfile profile) async {
     final nameCtrl = TextEditingController(text: profile.nickname);
     String avatarId = profile.avatarId;
+    String? photoBase64 = profile.photoBase64;
+    bool photoChanged = false;
     String emoji = profile.preferredEmoji;
     bool saving = false;
 
@@ -40,113 +64,191 @@ class _ProfilePageState extends State<ProfilePage> {
       context: context,
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            16,
-            20,
-            MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Edit Player Profile',
-                  style: Theme.of(ctx)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: nameCtrl,
-                  maxLength: 20,
-                  decoration: const InputDecoration(
-                    labelText: 'Nickname',
-                    prefixIcon: Icon(Icons.person_outline_rounded),
+        builder: (ctx, setModalState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              14,
+              20,
+              MediaQuery.of(ctx).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx).colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Choose Avatar',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final a in melowAvatars)
-                      GestureDetector(
-                        onTap: () => setModalState(() => avatarId = a.id),
-                        child: Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: avatarId == a.id
-                                  ? AppTheme.cyanAccent
-                                  : Colors.transparent,
-                              width: 3,
+                  const SizedBox(height: 12),
+                  Text(
+                    'Edit Player Profile',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 14),
+                  // Gallery Photo Preview + Pick/Remove Controls
+                  Row(
+                    children: [
+                      MelowAvatar(
+                        avatarId: avatarId,
+                        photoBase64: photoBase64,
+                        size: 64,
+                        borderColor: AppTheme.cyanAccent,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            FilledButton.tonalIcon(
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(42),
+                              ),
+                              onPressed: () async {
+                                try {
+                                  final picked =
+                                      await ImageHelper.pickProfilePhotoBase64();
+                                  if (picked != null) {
+                                    setModalState(() {
+                                      photoBase64 = picked;
+                                      photoChanged = true;
+                                    });
+                                  }
+                                } catch (e) {
+                                  _snack(
+                                    e
+                                        .toString()
+                                        .replaceFirst('Exception: ', ''),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.photo_library_rounded),
+                              label: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Choose from Gallery'),
+                              ),
                             ),
-                          ),
-                          child: MelowAvatar(avatarId: a.id, size: 46),
+                            if (photoBase64 != null && photoBase64!.isNotEmpty)
+                              TextButton(
+                                onPressed: () => setModalState(() {
+                                  photoBase64 = null;
+                                  photoChanged = true;
+                                }),
+                                child: const Text('Remove Photo (Use Avatar)'),
+                              ),
+                          ],
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Preferred Emoji Mark',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final c in emojiChoices)
-                      ChoiceChip(
-                        label: Text(c, style: const TextStyle(fontSize: 22)),
-                        selected: emoji == c,
-                        onSelected: (_) => setModalState(() => emoji = c),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: nameCtrl,
+                    maxLength: 20,
+                    decoration: const InputDecoration(
+                      labelText: 'Nickname',
+                      prefixIcon: Icon(Icons.person_outline_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Or Choose Built-In Avatar',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final a in melowAvatars)
+                        GestureDetector(
+                          onTap: () => setModalState(() {
+                            avatarId = a.id;
+                            photoBase64 = null;
+                            photoChanged = true;
+                          }),
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: (photoBase64 == null && avatarId == a.id)
+                                    ? AppTheme.cyanAccent
+                                    : Colors.transparent,
+                                width: 3,
+                              ),
+                            ),
+                            child: MelowAvatar(avatarId: a.id, size: 44),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      const Text(
+                        'Preferred Emoji Mark',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                FilledButton(
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          final err =
-                              GameEngine.validateNickname(nameCtrl.text);
-                          if (err != null) {
-                            _snack(err);
-                            return;
-                          }
-                          setModalState(() => saving = true);
-                          try {
-                            await widget.services.profile.updateProfile(
-                              nickname: nameCtrl.text.trim(),
-                              avatarId: avatarId,
-                              preferredEmoji: emoji,
-                              publicProfileEnabled:
-                                  profile.publicProfileEnabled,
-                              leaderboardOptIn: profile.leaderboardOptIn,
-                            );
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            _snack('Profile updated!');
-                          } catch (e) {
-                            _snack(e.toString().replaceFirst('Exception: ', ''));
-                          } finally {
-                            if (ctx.mounted) setModalState(() => saving = false);
-                          }
-                        },
-                  child: Text(saving ? 'Saving…' : 'Save Changes'),
-                ),
-              ],
+                      const Spacer(),
+                      Text(emoji, style: const TextStyle(fontSize: 24)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  EmojiPickerGrid(
+                    selectedEmoji: emoji,
+                    maxHeight: 165,
+                    onSelected: (e) => setModalState(() => emoji = e),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            final err =
+                                GameEngine.validateNickname(nameCtrl.text);
+                            if (err != null) {
+                              _snack(err);
+                              return;
+                            }
+                            setModalState(() => saving = true);
+                            try {
+                              await widget.services.profile.updateProfile(
+                                nickname: nameCtrl.text.trim(),
+                                avatarId: avatarId,
+                                photoBase64: photoBase64,
+                                updatePhoto: photoChanged,
+                                preferredEmoji: emoji,
+                                publicProfileEnabled:
+                                    profile.publicProfileEnabled,
+                                leaderboardOptIn: profile.leaderboardOptIn,
+                              );
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              _snack('Profile updated!');
+                            } catch (e) {
+                              _snack(
+                                e.toString().replaceFirst('Exception: ', ''),
+                              );
+                            } finally {
+                              if (ctx.mounted) {
+                                setModalState(() => saving = false);
+                              }
+                            }
+                          },
+                    child: Text(saving ? 'Saving…' : 'Save Changes'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -198,39 +300,76 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                       children: [
-                        // Identity Card
+                        // Identity Card with Gallery Photo Tap
                         Card(
                           child: Padding(
                             padding: const EdgeInsets.all(18),
                             child: Column(
                               children: [
-                                MelowAvatar(
-                                  avatarId: profile?.avatarId ?? 'astro',
-                                  size: 76,
-                                  borderColor: AppTheme.cyanAccent,
+                                GestureDetector(
+                                  onTap: profile == null
+                                      ? null
+                                      : () => _quickPickGalleryPhoto(profile),
+                                  child: Stack(
+                                    alignment: Alignment.bottomRight,
+                                    children: [
+                                      MelowAvatar(
+                                        avatarId: profile?.avatarId ?? 'astro',
+                                        photoBase64: profile?.photoBase64,
+                                        size: 84,
+                                        borderColor: AppTheme.cyanAccent,
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: scheme.primary,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: scheme.surface,
+                                            width: 2,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.photo_camera_rounded,
+                                          size: 16,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 const SizedBox(height: 10),
                                 Text(
                                   profile?.nickname ?? 'Player',
+                                  textAlign: TextAlign.center,
                                   style: Theme.of(context)
                                       .textTheme
                                       .headlineSmall
                                       ?.copyWith(fontWeight: FontWeight.w900),
                                 ),
                                 const SizedBox(height: 4),
-                                Text(
-                                  '${stats.rankBadge} • Level ${stats.level} • Mark ${profile?.preferredEmoji ?? '❌'}',
-                                  style: TextStyle(
-                                    color: scheme.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                Wrap(
+                                  alignment: WrapAlignment.center,
+                                  spacing: 6,
+                                  children: [
+                                    Text(
+                                      '${stats.rankBadge} • Lvl ${stats.level} • ${profile?.preferredEmoji ?? '❌'}',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: scheme.primary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 if (profile != null &&
                                     profile.friendCode.isNotEmpty) ...[
                                   const SizedBox(height: 12),
                                   ActionChip(
-                                    avatar: const Icon(Icons.copy_rounded,
-                                        size: 16),
+                                    avatar: const Icon(
+                                      Icons.copy_rounded,
+                                      size: 16,
+                                    ),
                                     label: Text(
                                       'Friend Code: ${profile.friendCode}',
                                       style: const TextStyle(
@@ -260,14 +399,14 @@ class _ProfilePageState extends State<ProfilePage> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        // Verified Statistics Grid
+                        // Responsive Stat Grid (no text clipping!)
                         GridView.count(
                           crossAxisCount: 3,
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           mainAxisSpacing: 10,
                           crossAxisSpacing: 10,
-                          childAspectRatio: 1.2,
+                          childAspectRatio: 1.0,
                           children: [
                             _StatTile(
                               label: 'Played',
@@ -300,7 +439,6 @@ class _ProfilePageState extends State<ProfilePage> {
                           ],
                         ),
                         const SizedBox(height: 14),
-                        // Next Achievement Progress
                         StreamBuilder<List<UserAchievement>>(
                           stream:
                               widget.services.profile.watchAchievements(uid),
@@ -362,7 +500,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                         const SizedBox(height: 14),
                         const Text(
-                          'Recent Verified Match History',
+                          'Recent Match History',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
@@ -421,7 +559,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         Card(
                           child: ListTile(
                             leading: const Icon(Icons.info_outline_rounded),
-                            title: const Text('About Melow Tic Tac Toe v2.0'),
+                            title: const Text('About Melow Tic Tac Toe v3.0'),
                             trailing: const Icon(Icons.chevron_right_rounded),
                             onTap: () => Navigator.push(
                               context,
@@ -460,24 +598,32 @@ class _StatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: accent,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w900,
+                  color: accent,
+                ),
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],

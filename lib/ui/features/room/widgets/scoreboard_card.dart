@@ -26,20 +26,21 @@ class ScoreboardCard extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Column(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
               children: [
                 _InfoPill(
-                  icon: room.isBlitz ? Icons.bolt_rounded : Icons.grid_on_rounded,
+                  icon:
+                      room.isBlitz ? Icons.bolt_rounded : Icons.grid_on_rounded,
                   label: room.gameMode.label,
                   highlight: room.isBlitz,
                 ),
-                const SizedBox(width: 8),
                 _InfoPill(
                   icon: Icons.apps_rounded,
                   label: '${room.size}×${room.size}',
                 ),
-                const SizedBox(width: 8),
                 _InfoPill(
                   icon: Icons.emoji_events_outlined,
                   label: 'BO${room.bestOf}',
@@ -62,14 +63,17 @@ class ScoreboardCard extends StatelessWidget {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Column(
                     children: [
-                      Text(
-                        '${room.hostWins} - ${room.guestWins}',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${room.hostWins} - ${room.guestWins}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                       Text(
@@ -183,7 +187,7 @@ class _PlayerColumn extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: isActive
             ? scheme.primaryContainer.withValues(alpha: 0.65)
@@ -201,13 +205,13 @@ class _PlayerColumn extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (alignment == CrossAxisAlignment.end) ...[
-                Text(emoji, style: const TextStyle(fontSize: 22)),
-                const SizedBox(width: 6),
+                Text(emoji, style: const TextStyle(fontSize: 20)),
+                const SizedBox(width: 5),
               ],
-              MelowAvatar(avatarId: avatarId, size: 34),
+              MelowAvatar(avatarId: avatarId, size: 32),
               if (alignment == CrossAxisAlignment.start) ...[
-                const SizedBox(width: 6),
-                Text(emoji, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 5),
+                Text(emoji, style: const TextStyle(fontSize: 20)),
               ],
             ],
           ),
@@ -216,6 +220,9 @@ class _PlayerColumn extends StatelessWidget {
             isYou ? '$name (You)' : name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            textAlign: alignment == CrossAxisAlignment.end
+                ? TextAlign.right
+                : TextAlign.left,
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
           ),
           const SizedBox(height: 5),

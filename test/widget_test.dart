@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:melow_tic_tac_toe/domain/game_engine.dart';
 import 'package:melow_tic_tac_toe/domain/models/game_room.dart';
 import 'package:melow_tic_tac_toe/ui/core/app_theme.dart';
+import 'package:melow_tic_tac_toe/ui/core/widgets/emoji_picker_grid.dart';
 import 'package:melow_tic_tac_toe/ui/features/about/about_screen.dart';
 import 'package:melow_tic_tac_toe/ui/features/room/widgets/blitz_timer_bar.dart';
 import 'package:melow_tic_tac_toe/ui/features/room/widgets/game_board.dart';
@@ -97,6 +98,40 @@ void main() {
     expect(find.text('Draws: 1'), findsOneWidget);
   });
 
+  testWidgets('EmojiPickerGrid includes Boy, Girl and Funny emojis', (
+    WidgetTester tester,
+  ) async {
+    String selected = '❌';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => EmojiPickerGrid(
+              selectedEmoji: selected,
+              onSelected: (e) => setState(() => selected = e),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Filter to People category -> verify Boy & Girl emojis exist and can be selected
+    await tester.tap(find.text('People'));
+    await tester.pump();
+    expect(find.text('👦'), findsOneWidget);
+    expect(find.text('👧'), findsOneWidget);
+    await tester.tap(find.text('👧'));
+    await tester.pump();
+    expect(selected, '👧');
+
+    // Filter to Funny category -> verify funny emojis exist
+    await tester.tap(find.text('Funny'));
+    await tester.pump();
+    expect(find.text('🤡'), findsOneWidget);
+    expect(find.text('🤣'), findsOneWidget);
+  });
+
   testWidgets('VictoryCardSheet hides opponent name when privacy toggle is on', (
     WidgetTester tester,
   ) async {
@@ -152,14 +187,14 @@ void main() {
     expect(expiredCount, 1);
   });
 
-  testWidgets('AboutScreen shows v2.0 branding and Melow Labs credit', (
+  testWidgets('AboutScreen shows v3.0 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 2.0.0 (Build 2)'), findsOneWidget);
+    expect(find.text('Version 3.0.0 (Build 3)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,

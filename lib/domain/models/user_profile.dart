@@ -6,6 +6,7 @@ class UserProfile {
     required this.uid,
     required this.nickname,
     required this.avatarId,
+    this.photoBase64,
     required this.preferredEmoji,
     required this.friendCode,
     required this.publicProfileEnabled,
@@ -17,12 +18,15 @@ class UserProfile {
   final String uid;
   final String nickname;
   final String avatarId;
+  final String? photoBase64;
   final String preferredEmoji;
   final String friendCode;
   final bool publicProfileEnabled;
   final bool leaderboardOptIn;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  bool get hasCustomPhoto => photoBase64 != null && photoBase64!.isNotEmpty;
 
   factory UserProfile.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -32,6 +36,7 @@ class UserProfile {
       uid: doc.id,
       nickname: data['nickname'] as String? ?? 'Player',
       avatarId: data['avatarId'] as String? ?? 'astro',
+      photoBase64: data['photoBase64'] as String?,
       preferredEmoji: data['preferredEmoji'] as String? ?? '❌',
       friendCode: data['friendCode'] as String? ?? '',
       publicProfileEnabled: data['publicProfileEnabled'] != false,
@@ -44,30 +49,9 @@ class UserProfile {
           : null,
     );
   }
-
-  UserProfile copyWith({
-    String? nickname,
-    String? avatarId,
-    String? preferredEmoji,
-    String? friendCode,
-    bool? publicProfileEnabled,
-    bool? leaderboardOptIn,
-  }) {
-    return UserProfile(
-      uid: uid,
-      nickname: nickname ?? this.nickname,
-      avatarId: avatarId ?? this.avatarId,
-      preferredEmoji: preferredEmoji ?? this.preferredEmoji,
-      friendCode: friendCode ?? this.friendCode,
-      publicProfileEnabled: publicProfileEnabled ?? this.publicProfileEnabled,
-      leaderboardOptIn: leaderboardOptIn ?? this.leaderboardOptIn,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-    );
-  }
 }
 
-/// Verified server-maintained player stats stored at `stats/{uid}`.
+/// Verified player stats stored at `stats/{uid}`.
 class PlayerStats {
   const PlayerStats({
     this.gamesPlayed = 0,
@@ -95,7 +79,6 @@ class PlayerStats {
 
   double get winRate => gamesPlayed == 0 ? 0.0 : (wins / gamesPlayed) * 100.0;
 
-  /// Player progression level derived from verified stats.
   int get level => 1 + (wins ~/ 3) + (tournamentsWon * 2);
 
   String get rankBadge {
@@ -126,7 +109,6 @@ class PlayerStats {
   }
 }
 
-/// Verified achievement record at `users/{uid}/achievements/{achievementId}`.
 class UserAchievement {
   const UserAchievement({
     required this.achievementId,
@@ -157,7 +139,6 @@ class UserAchievement {
   }
 }
 
-/// Verified trophy record at `users/{uid}/trophies/{trophyId}`.
 class UserTrophy {
   const UserTrophy({
     required this.trophyId,

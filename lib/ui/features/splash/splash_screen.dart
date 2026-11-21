@@ -118,7 +118,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Version 2.0 • Play • Challenge • Win the Cup',
+                          'Version 3.0 • Play • Chat • Call • Win',
                           style: TextStyle(
                             color: scheme.onSurfaceVariant,
                             fontWeight: FontWeight.w500,

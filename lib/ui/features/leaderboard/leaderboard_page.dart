@@ -8,7 +8,7 @@ import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
 import '../../core/widgets/melow_avatar.dart';
 
-/// Phase 12 Global & Friends Verified Leaderboards with pagination & tie-breaking.
+/// Melow v3.0 Global & Friends Verified Leaderboards with crisp mobile layout.
 class LeaderboardPage extends StatefulWidget {
   const LeaderboardPage({super.key, required this.services});
 
@@ -19,7 +19,7 @@ class LeaderboardPage extends StatefulWidget {
 }
 
 class _LeaderboardPageState extends State<LeaderboardPage> {
-  String _scope = 'global'; // global | friends
+  String _scope = 'global';
   LeaderboardMetric _metric = LeaderboardMetric.wins;
 
   bool _loading = true;
@@ -57,8 +57,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
         });
       } else {
         final uid = widget.services.game.currentUid;
-        final friends =
-            await widget.services.friends.watchFriends(uid).first;
+        final friends = await widget.services.friends.watchFriends(uid).first;
         final list = await widget.services.leaderboard.fetchFriendsLeaderboard(
           currentUid: uid,
           friendUids: friends.map((f) => f.friendUid).toList(growable: false),
@@ -70,7 +69,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
           _hasMore = false;
         });
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(
           () => _error = 'Could not load rankings right now. Pull to retry.',
@@ -137,24 +136,34 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'global',
-                        icon: Icon(Icons.public_rounded),
-                        label: Text('Global'),
-                      ),
-                      ButtonSegment(
-                        value: 'friends',
-                        icon: Icon(Icons.groups_rounded),
-                        label: Text('Friends'),
-                      ),
-                    ],
-                    selected: {_scope},
-                    onSelectionChanged: (v) {
-                      setState(() => _scope = v.first);
-                      _loadInitial();
-                    },
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<String>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: 'global',
+                          icon: Icon(Icons.public_rounded, size: 18),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Global'),
+                          ),
+                        ),
+                        ButtonSegment(
+                          value: 'friends',
+                          icon: Icon(Icons.groups_rounded, size: 18),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Friends'),
+                          ),
+                        ),
+                      ],
+                      selected: {_scope},
+                      onSelectionChanged: (v) {
+                        setState(() => _scope = v.first);
+                        _loadInitial();
+                      },
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SingleChildScrollView(
@@ -217,7 +226,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              'Finish multiplayer tournaments to climb the verified ${_scope == 'global' ? 'Global' : 'Friends'} Leaderboard!',
+                              'Finish multiplayer tournaments to climb the ${_scope == 'global' ? 'Global' : 'Friends'} Leaderboard!',
                               textAlign: TextAlign.center,
                               style: TextStyle(color: scheme.onSurfaceVariant),
                             ),
@@ -276,19 +285,28 @@ class _LeaderboardRow extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Card(
       color: isMe ? scheme.primaryContainer.withValues(alpha: 0.45) : null,
-      child: ListTile(
-        leading: SizedBox(
-          width: 42,
-          child: Center(
-            child: Text(
-              rankLabel,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-            ),
-          ),
-        ),
-        title: Row(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
           children: [
-            MelowAvatar(avatarId: entry.avatarId, size: 34),
+            SizedBox(
+              width: 36,
+              child: Center(
+                child: Text(
+                  rankLabel,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            MelowAvatar(
+              avatarId: entry.avatarId,
+              photoBase64: entry.photoBase64,
+              size: 36,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -298,21 +316,22 @@ class _LeaderboardRow extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
-          ],
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppTheme.goldAccent.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Text(
-            '${entry.scoreFor(metric)} ${metric.label}',
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: 13,
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.goldAccent.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                '${entry.scoreFor(metric)} ${metric.label}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

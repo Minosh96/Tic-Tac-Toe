@@ -5,6 +5,7 @@ class FriendEntry {
     required this.friendUid,
     required this.nickname,
     required this.avatarId,
+    this.photoBase64,
     required this.status,
     this.since,
   });
@@ -12,6 +13,7 @@ class FriendEntry {
   final String friendUid;
   final String nickname;
   final String avatarId;
+  final String? photoBase64;
   final String status;
   final DateTime? since;
 
@@ -23,6 +25,7 @@ class FriendEntry {
       friendUid: data['friendUid'] as String? ?? doc.id,
       nickname: data['nickname'] as String? ?? 'Friend',
       avatarId: data['avatarId'] as String? ?? 'fox',
+      photoBase64: data['photoBase64'] as String?,
       status: data['status'] as String? ?? 'accepted',
       since: data['since'] is Timestamp
           ? (data['since'] as Timestamp).toDate()
@@ -52,7 +55,7 @@ class FriendRequest {
   final String receiverUid;
   final String receiverName;
   final String receiverAvatar;
-  final String status; // pending | accepted | declined | cancelled
+  final String status;
   final DateTime? createdAt;
   final DateTime? expiresAt;
 
@@ -112,7 +115,7 @@ class FriendChallenge {
   final int boardSize;
   final int bestOf;
   final String roomId;
-  final String status; // pending | accepted | declined | cancelled
+  final String status;
   final DateTime? createdAt;
   final DateTime? expiresAt;
 
@@ -143,6 +146,138 @@ class FriendChallenge {
           : null,
       expiresAt: data['expiresAt'] is Timestamp
           ? (data['expiresAt'] as Timestamp).toDate()
+          : null,
+    );
+  }
+}
+
+class DirectChatSummary {
+  const DirectChatSummary({
+    required this.chatId,
+    required this.participants,
+    required this.lastMessage,
+    required this.lastSenderUid,
+    required this.unreadBy,
+    this.lastMessageAt,
+  });
+
+  final String chatId;
+  final List<String> participants;
+  final String lastMessage;
+  final String lastSenderUid;
+  final List<String> unreadBy;
+  final DateTime? lastMessageAt;
+
+  bool isUnreadFor(String uid) => unreadBy.contains(uid);
+
+  factory DirectChatSummary.fromFirestore(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    return DirectChatSummary(
+      chatId: doc.id,
+      participants: (data['participants'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
+      lastMessage: data['lastMessage'] as String? ?? '',
+      lastSenderUid: data['lastSenderUid'] as String? ?? '',
+      unreadBy: (data['unreadBy'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
+      lastMessageAt: data['lastMessageAt'] is Timestamp
+          ? (data['lastMessageAt'] as Timestamp).toDate()
+          : null,
+    );
+  }
+}
+
+class DirectChatMessage {
+  const DirectChatMessage({
+    required this.id,
+    required this.senderUid,
+    required this.senderName,
+    required this.text,
+    this.imageBase64,
+    this.createdAt,
+  });
+
+  final String id;
+  final String senderUid;
+  final String senderName;
+  final String text;
+  final String? imageBase64;
+  final DateTime? createdAt;
+
+  bool get hasImage => imageBase64 != null && imageBase64!.isNotEmpty;
+
+  factory DirectChatMessage.fromFirestore(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    return DirectChatMessage(
+      id: doc.id,
+      senderUid: data['senderUid'] as String? ?? '',
+      senderName: data['senderName'] as String? ?? 'Player',
+      text: data['text'] as String? ?? '',
+      imageBase64: data['imageBase64'] as String?,
+      createdAt: data['createdAt'] is Timestamp
+          ? (data['createdAt'] as Timestamp).toDate()
+          : null,
+    );
+  }
+}
+
+class VoiceCallSession {
+  const VoiceCallSession({
+    required this.callId,
+    required this.callerUid,
+    required this.calleeUid,
+    required this.callerName,
+    required this.callerAvatar,
+    required this.calleeName,
+    required this.status,
+    this.roomId,
+    this.offer,
+    this.answer,
+    this.createdAt,
+  });
+
+  final String callId;
+  final String callerUid;
+  final String calleeUid;
+  final String callerName;
+  final String callerAvatar;
+  final String calleeName;
+  final String status; // ringing | active | ended | declined | missed
+  final String? roomId;
+  final Map<String, dynamic>? offer;
+  final Map<String, dynamic>? answer;
+  final DateTime? createdAt;
+
+  bool get isRinging => status == 'ringing';
+  bool get isActive => status == 'active';
+
+  factory VoiceCallSession.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? const <String, dynamic>{};
+    return VoiceCallSession(
+      callId: doc.id,
+      callerUid: data['callerUid'] as String? ?? '',
+      calleeUid: data['calleeUid'] as String? ?? '',
+      callerName: data['callerName'] as String? ?? 'Player',
+      callerAvatar: data['callerAvatar'] as String? ?? 'astro',
+      calleeName: data['calleeName'] as String? ?? 'Friend',
+      status: data['status'] as String? ?? 'ended',
+      roomId: data['roomId'] as String?,
+      offer: data['offer'] is Map<String, dynamic>
+          ? data['offer'] as Map<String, dynamic>
+          : null,
+      answer: data['answer'] is Map<String, dynamic>
+          ? data['answer'] as Map<String, dynamic>
+          : null,
+      createdAt: data['createdAt'] is Timestamp
+          ? (data['createdAt'] as Timestamp).toDate()
           : null,
     );
   }
@@ -205,7 +340,7 @@ class RivalryStats {
 enum LeaderboardMetric {
   wins('wins', 'Wins'),
   tournamentsWon('tournamentsWon', 'Trophies'),
-  bestStreak('bestStreak', 'Best Streak'),
+  bestStreak('bestStreak', 'Streak'),
   blitzWins('blitzWins', 'Blitz');
 
   const LeaderboardMetric(this.field, this.label);
@@ -218,6 +353,7 @@ class LeaderboardEntry {
     required this.uid,
     required this.publicNickname,
     required this.avatarId,
+    this.photoBase64,
     required this.wins,
     required this.tournamentsWon,
     required this.bestStreak,
@@ -228,6 +364,7 @@ class LeaderboardEntry {
   final String uid;
   final String publicNickname;
   final String avatarId;
+  final String? photoBase64;
   final int wins;
   final int tournamentsWon;
   final int bestStreak;
@@ -255,6 +392,7 @@ class LeaderboardEntry {
       uid: doc.id,
       publicNickname: data['publicNickname'] as String? ?? 'Player',
       avatarId: data['avatarId'] as String? ?? 'astro',
+      photoBase64: data['photoBase64'] as String?,
       wins: (data['wins'] as num?)?.toInt() ?? 0,
       tournamentsWon: (data['tournamentsWon'] as num?)?.toInt() ?? 0,
       bestStreak: (data['bestStreak'] as num?)?.toInt() ?? 0,
@@ -290,7 +428,7 @@ class MatchSummary {
   final int guestWins;
   final int draws;
   final String finalWinnerUid;
-  final String finalStatus; // 'won' | 'draw'
+  final String finalStatus;
   final DateTime? completedAt;
 
   factory MatchSummary.fromFirestore(

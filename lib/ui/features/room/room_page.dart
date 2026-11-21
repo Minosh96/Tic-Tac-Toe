@@ -3,8 +3,10 @@ import 'dart:math';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/services/app_services.dart';
+import '../../../core/services/image_helper.dart';
 import '../../../core/services/sound_service.dart';
 import '../../../domain/game_engine.dart';
 import '../../../domain/models/game_room.dart';
@@ -12,6 +14,7 @@ import '../../../domain/models/room_reaction.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
 import '../challenge_wheel/challenge_wheel_dialog.dart';
+import '../chat/voice_call_screen.dart';
 import '../sharing/victory_card_sheet.dart';
 import 'widgets/blitz_timer_bar.dart';
 import 'widgets/game_board.dart';
@@ -19,8 +22,8 @@ import 'widgets/reaction_overlay.dart';
 import 'widgets/room_chat_panel.dart';
 import 'widgets/scoreboard_card.dart';
 
-/// Redesigned Melow v2.0 Game Room with Blitz mode, Challenge Wheel,
-/// live Reactions & Quick Taunts, Confetti/SFX, Victory Sharing & Chat drawer.
+/// Melow v3.0 Game Room with automatic trophy/cup recording, Blitz mode,
+/// Challenge Wheel, Reactions/Taunts, Image Chat, Voice Call & Victory Sharing.
 class RoomPage extends StatefulWidget {
   const RoomPage({
     super.key,
@@ -45,6 +48,7 @@ class _RoomPageState extends State<RoomPage> {
   bool _confirmedLeave = false;
 
   String? _lastWheelSpinId;
+  String? _lastRecordedMatchKey;
   int _lastSoundRound = 0;
   bool _lastRoundDone = false;
   bool _lastFinished = false;
@@ -77,17 +81,35 @@ class _RoomPageState extends State<RoomPage> {
     _notice('Room code ${widget.code} copied');
   }
 
-  Future<void> _sendMessage() async {
+  Future<void> _sendMessage({String? imageBase64}) async {
     final text = _chatController.text.trim();
-    if (text.isEmpty || _sendingChat) return;
+    if (text.isEmpty && (imageBase64 == null || imageBase64.isEmpty)) return;
+    if (_sendingChat) return;
     setState(() => _sendingChat = true);
     try {
-      await widget.services.game.sendChatMessage(widget.code, text);
+      await widget.services.game.sendChatMessage(
+        widget.code,
+        text,
+        imageBase64: imageBase64,
+      );
       _chatController.clear();
     } catch (e) {
       _notice('Chat failed: ${e.toString().replaceFirst('Exception: ', '')}');
     } finally {
       if (mounted) setState(() => _sendingChat = false);
+    }
+  }
+
+  Future<void> _pickAndSendChatImage() async {
+    try {
+      final base64Img = await ImageHelper.pickChatImageBase64(
+        source: ImageSource.gallery,
+      );
+      if (base64Img != null) {
+        await _sendMessage(imageBase64: base64Img);
+      }
+    } catch (e) {
+      _notice(e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
@@ -120,7 +142,16 @@ class _RoomPageState extends State<RoomPage> {
     final reducedMotion = widget.services.preferences.reducedMotion ||
         MediaQuery.of(context).disableAnimations;
 
-    // Show synchronized Challenge Wheel dialog once per spinId.
+    // Immediately record cup/trophy/achievement/stats for BOTH winner & loser once per match!
+    if (room.isFinished && room.champion.isNotEmpty) {
+      final matchKey =
+          '${room.code}_${room.hostWins}_${room.guestWins}_${room.draws}_${room.round}';
+      if (_lastRecordedMatchKey != matchKey) {
+        _lastRecordedMatchKey = matchKey;
+        widget.services.game.recordFinishedMatchForCurrentUser(room);
+      }
+    }
+
     final spin = room.wheelResult;
     if (spin != null && spin.spinId != _lastWheelSpinId) {
       _lastWheelSpinId = spin.spinId;
@@ -142,7 +173,6 @@ class _RoomPageState extends State<RoomPage> {
       }
     }
 
-    // Play SFX & confetti on state transitions only (never on every rebuild).
     if (room.isFinished && !_lastFinished) {
       _lastFinished = true;
       _lastRoundDone = true;
@@ -152,7 +182,8 @@ class _RoomPageState extends State<RoomPage> {
       if (!reducedMotion && room.champion == mySide) {
         _confettiController.play();
       }
-    } else if (!room.isFinished && room.roundDone &&
+    } else if (!room.isFinished &&
+        room.roundDone &&
         (!_lastRoundDone || _lastSoundRound != room.round)) {
       _lastRoundDone = true;
       _lastSoundRound = room.round;
@@ -217,15 +248,15 @@ class _RoomPageState extends State<RoomPage> {
               ),
               const SizedBox(height: 14),
               Wrap(
-                spacing: 12,
-                runSpacing: 12,
+                spacing: 10,
+                runSpacing: 10,
                 children: [
                   for (final emoji in allowedReactionEmojis)
                     ActionChip(
-                      label: Text(emoji, style: const TextStyle(fontSize: 28)),
+                      label: Text(emoji, style: const TextStyle(fontSize: 26)),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
+                        horizontal: 6,
+                        vertical: 4,
                       ),
                       onPressed: () {
                         Navigator.pop(context);
@@ -362,6 +393,8 @@ class _RoomPageState extends State<RoomPage> {
 
           final myTurn = room.turn == mySide;
           final winResult = room.winResult;
+          final opponentSide = mySide == 'h' ? 'g' : 'h';
+          final opponentUid = mySide == 'h' ? room.guestId : room.hostId;
           final opponentLeft =
               (mySide == 'h' && room.guestLeft) || (mySide == 'g' && room.hostLeft);
           final reducedMotion = prefs.reducedMotion ||
@@ -377,14 +410,36 @@ class _RoomPageState extends State<RoomPage> {
                   if (ok && context.mounted) Navigator.pop(context);
                 },
               ),
-              title: Text(
-                'Room ${widget.code}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.0,
+              title: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'Room ${widget.code}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.0,
+                  ),
                 ),
               ),
               actions: [
+                if (opponentUid.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.call_rounded),
+                    tooltip: 'Voice call opponent',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => VoiceCallScreen.outgoing(
+                          services: widget.services,
+                          calleeUid: opponentUid,
+                          calleeName: room.playerName(opponentSide),
+                          calleeAvatar: room.playerAvatar(opponentSide),
+                          callerName: room.playerName(mySide),
+                          callerAvatar: room.playerAvatar(mySide),
+                          roomId: widget.code,
+                        ),
+                      ),
+                    ),
+                  ),
                 IconButton(
                   icon: const Icon(Icons.copy_rounded),
                   tooltip: 'Copy room code',
@@ -491,25 +546,40 @@ class _RoomPageState extends State<RoomPage> {
                                     },
                                   ),
                                   const SizedBox(height: 12),
-                                  // Reactions, Quick Taunts & Collapsible Chat toolbar
                                   Row(
                                     children: [
                                       Expanded(
                                         child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                            ),
+                                          ),
                                           onPressed: _openReactionsSheet,
                                           icon: const Text('😂'),
-                                          label: const Text('React'),
+                                          label: const FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text('React'),
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                            ),
+                                          ),
                                           onPressed: _openQuickTauntsSheet,
                                           icon: const Icon(
                                             Icons.campaign_rounded,
                                             size: 18,
                                           ),
-                                          label: const Text('Taunt'),
+                                          label: const FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text('Taunt'),
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(width: 8),
@@ -601,12 +671,19 @@ class _RoomPageState extends State<RoomPage> {
                               ),
                             ),
                           ),
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                          padding: const EdgeInsets.fromLTRB(8, 8, 10, 12),
                           child: Center(
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 520),
                               child: Row(
                                 children: [
+                                  IconButton(
+                                    tooltip: 'Share photo in chat',
+                                    onPressed: _sendingChat
+                                        ? null
+                                        : _pickAndSendChatImage,
+                                    icon: const Icon(Icons.photo_outlined),
+                                  ),
                                   Expanded(
                                     child: TextField(
                                       controller: _chatController,
@@ -647,7 +724,6 @@ class _RoomPageState extends State<RoomPage> {
                     ],
                   ),
                 ),
-                // Live floating Reactions & Quick Taunts overlay
                 Positioned.fill(
                   child: StreamBuilder<List<RoomReaction>>(
                     stream: widget.services.game.watchReactions(widget.code),
@@ -669,7 +745,6 @@ class _RoomPageState extends State<RoomPage> {
                     },
                   ),
                 ),
-                // Confetti emitter at top center
                 Align(
                   alignment: Alignment.topCenter,
                   child: ConfettiWidget(
@@ -721,19 +796,43 @@ class _ChallengeWheelBanner extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 10),
         child: Card(
           color: scheme.primaryContainer.withValues(alpha: 0.4),
-          child: ListTile(
-            leading: const Text('🎡', style: TextStyle(fontSize: 28)),
-            title: const Text(
-              'Spin the Random Challenge Wheel?',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-            ),
-            subtitle: const Text(
-              'Propose a surprise mode (both players must accept).',
-              style: TextStyle(fontSize: 12),
-            ),
-            trailing: FilledButton.tonal(
-              onPressed: busy ? null : onPropose,
-              child: const Text('Propose'),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Text('🎡', style: TextStyle(fontSize: 24)),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Random Challenge Wheel',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Propose a surprise mode (both players must accept).',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonal(
+                    onPressed: busy ? null : onPropose,
+                    child: const Text('Propose Wheel Spin'),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -762,15 +861,27 @@ class _ChallengeWheelBanner extends StatelessWidget {
                     children: [
                       Expanded(
                         child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
                           onPressed: busy ? null : () => onRespond(false),
-                          child: const Text('Decline'),
+                          child: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Decline'),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
                           onPressed: busy ? null : () => onRespond(true),
-                          child: const Text('Accept & Spin!'),
+                          child: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Accept & Spin!'),
+                          ),
                         ),
                       ),
                     ],
@@ -828,18 +939,21 @@ class _LobbyCard extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               decoration: BoxDecoration(
                 color: scheme.primaryContainer,
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: SelectableText(
-                code,
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 4,
-                  color: scheme.onPrimaryContainer,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: SelectableText(
+                  code,
+                  style: TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 4,
+                    color: scheme.onPrimaryContainer,
+                  ),
                 ),
               ),
             ),
@@ -933,7 +1047,7 @@ class _ChampionCard extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            const Text('🏆', style: TextStyle(fontSize: 68)),
+            const Text('🏆', style: TextStyle(fontSize: 64)),
             const SizedBox(height: 6),
             Text(
               '$winnerEmoji $winnerName takes the Melow Cup!',
@@ -948,17 +1062,29 @@ class _ChampionCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
                     onPressed: busy ? null : onRematch,
-                    icon: const Icon(Icons.replay_rounded),
-                    label: const Text('Rematch'),
+                    icon: const Icon(Icons.replay_rounded, size: 18),
+                    label: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Rematch'),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
                     onPressed: onShare,
-                    icon: const Icon(Icons.share_rounded),
-                    label: const Text('Share Card'),
+                    icon: const Icon(Icons.share_rounded, size: 18),
+                    label: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Share Card'),
+                    ),
                   ),
                 ),
               ],
