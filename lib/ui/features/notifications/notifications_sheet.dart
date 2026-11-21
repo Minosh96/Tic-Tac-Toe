@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/services/app_services.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../../../domain/game_engine.dart';
 import '../../../domain/models/social_models.dart';
 import '../../../domain/models/user_profile.dart';
+import '../../core/widgets/live_user_avatar.dart';
 import '../../core/widgets/melow_avatar.dart';
 import '../chat/friend_chat_screen.dart';
 import '../chat/voice_call_screen.dart';
@@ -56,11 +58,15 @@ class NotificationsSheet extends StatelessWidget {
                                   .toList(growable: false);
                               final unreadChats = chatSnap.data ?? const [];
 
+                              final unreadTotal = unreadChats.fold<int>(
+                                0,
+                                (sum, c) => sum + c.unreadCountFor(uid),
+                              );
                               final total = calls.length +
                                   requests.length +
                                   challenges.length +
                                   acceptedOut.length +
-                                  unreadChats.length;
+                                  unreadTotal;
 
                               return ListView(
                                 controller: scrollController,
@@ -91,6 +97,22 @@ class NotificationsSheet extends StatelessWidget {
                                         Chip(
                                           label: Text('$total'),
                                           visualDensity: VisualDensity.compact,
+                                        ),
+                                      const Spacer(),
+                                      if (unreadChats.isNotEmpty)
+                                        TextButton(
+                                          onPressed: () async {
+                                            final ids = unreadChats
+                                                .map((c) => c.chatId)
+                                                .toList(growable: false);
+                                            await services.chat
+                                                .markAllChatsRead(ids);
+                                            for (final id in ids) {
+                                              await PushNotificationService
+                                                  .cancelMessageNotification(id);
+                                            }
+                                          },
+                                          child: const Text('Mark all read'),
                                         ),
                                     ],
                                   ),
@@ -292,104 +314,159 @@ class NotificationsSheet extends StatelessWidget {
                                             ),
                                           ),
                                           subtitle: Text('Room ${c.roomId}'),
-                                          trailing: FilledButton(
-                                            style: FilledButton.styleFrom(
-                                              minimumSize: const Size(72, 38),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 12,
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              FilledButton(
+                                                style: FilledButton.styleFrom(
+                                                  minimumSize:
+                                                      const Size(64, 38),
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 12,
+                                                  ),
+                                                ),
+                                                onPressed: me == null
+                                                    ? null
+                                                    : () async {
+                                                        try {
+                                                          await services.game
+                                                              .joinRoom(
+                                                            code: c.roomId,
+                                                            name: me!.nickname,
+                                                            emoji: me!
+                                                                .preferredEmoji,
+                                                            guestAvatar:
+                                                                me!.avatarId,
+                                                          );
+                                                        } catch (_) {}
+                                                        await services.friends
+                                                            .removeSentChallenge(
+                                                                c.id);
+                                                        if (!context.mounted) {
+                                                          return;
+                                                        }
+                                                        Navigator.pop(context);
+                                                        Navigator.push(
+                                                          context,
+                                                          MaterialPageRoute(
+                                                            builder: (_) =>
+                                                                RoomPage(
+                                                              code: c.roomId,
+                                                              services:
+                                                                  services,
+                                                            ),
+                                                          ),
+                                                        );
+                                                      },
+                                                child: const Text('Join'),
                                               ),
-                                            ),
-                                            onPressed: me == null
-                                                ? null
-                                                : () async {
-                                                    try {
-                                                      await services.game
-                                                          .joinRoom(
-                                                        code: c.roomId,
-                                                        name: me!.nickname,
-                                                        emoji:
-                                                            me!.preferredEmoji,
-                                                        guestAvatar:
-                                                            me!.avatarId,
-                                                      );
-                                                    } catch (_) {}
-                                                    if (!context.mounted) {
-                                                      return;
-                                                    }
-                                                    Navigator.pop(context);
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (_) =>
-                                                            RoomPage(
-                                                          code: c.roomId,
-                                                          services: services,
-                                                        ),
-                                                      ),
-                                                    );
-                                                  },
-                                            child: const Text('Join'),
+                                              IconButton(
+                                                tooltip: 'Remove challenge',
+                                                icon: const Icon(
+                                                  Icons.close_rounded,
+                                                  size: 20,
+                                                ),
+                                                onPressed: () => services
+                                                    .friends
+                                                    .removeSentChallenge(c.id),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
                                     ),
                                   for (final chat in unreadChats)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: Card(
-                                        child: ListTile(
-                                          leading: const Icon(
-                                            Icons.mark_chat_unread_rounded,
-                                          ),
-                                          title: const Text(
-                                            'New Friend Message',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                          subtitle: Text(
-                                            chat.lastMessage,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          trailing: const Icon(
-                                            Icons.chevron_right_rounded,
-                                          ),
-                                          onTap: () async {
-                                            final otherUid = chat.participants
-                                                .firstWhere(
-                                              (p) => p != uid,
-                                              orElse: () => '',
-                                            );
-                                            if (otherUid.isEmpty) return;
-                                            final friendProfile = await services
-                                                .profile
-                                                .getProfile(otherUid);
-                                            if (!context.mounted) return;
-                                            Navigator.pop(context);
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    FriendChatScreen(
-                                                  services: services,
-                                                  friendUid: otherUid,
-                                                  friendName:
-                                                      friendProfile?.nickname ??
-                                                          'Friend',
-                                                  friendAvatar:
-                                                      friendProfile?.avatarId ??
-                                                          'fox',
-                                                  friendPhotoBase64:
-                                                      friendProfile
-                                                          ?.photoBase64,
+                                    Builder(
+                                      builder: (context) {
+                                        final otherUid =
+                                            chat.otherParticipantUid(uid);
+                                        final unread = chat.unreadCountFor(uid);
+                                        return Padding(
+                                          padding:
+                                              const EdgeInsets.only(bottom: 8),
+                                          child: Card(
+                                            child: ListTile(
+                                              leading: LiveUserAvatar(
+                                                services: services,
+                                                uid: otherUid,
+                                                size: 40,
+                                              ),
+                                              title: Text(
+                                                chat.lastSenderName.isNotEmpty
+                                                    ? chat.lastSenderName
+                                                    : 'New Friend Message',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w800,
                                                 ),
                                               ),
-                                            );
-                                          },
-                                        ),
-                                      ),
+                                              subtitle: Text(
+                                                chat.lastMessage,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              trailing: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 9,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: scheme.primary,
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: Text(
+                                                  '$unread new',
+                                                  style: TextStyle(
+                                                    color: scheme.onPrimary,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                              onTap: () async {
+                                                // Immediately clear unread badge & Android tray notification once read!
+                                                await services.chat
+                                                    .markChatRead(chat.chatId);
+                                                await PushNotificationService
+                                                    .cancelMessageNotification(
+                                                        chat.chatId);
+                                                if (otherUid.isEmpty) return;
+                                                final friendProfile =
+                                                    await services.profile
+                                                        .getProfile(otherUid);
+                                                if (!context.mounted) return;
+                                                Navigator.pop(context);
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        FriendChatScreen(
+                                                      services: services,
+                                                      friendUid: otherUid,
+                                                      friendName: friendProfile
+                                                              ?.nickname ??
+                                                          (chat.lastSenderName
+                                                                  .isNotEmpty
+                                                              ? chat
+                                                                  .lastSenderName
+                                                              : 'Friend'),
+                                                      friendAvatar:
+                                                          friendProfile
+                                                                  ?.avatarId ??
+                                                              'fox',
+                                                      friendPhotoBase64:
+                                                          friendProfile
+                                                              ?.photoBase64,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
                                 ],
                               );

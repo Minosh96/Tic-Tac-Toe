@@ -5,7 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import '../../domain/game_engine.dart';
 import '../../domain/models/social_models.dart';
 
-/// Direct 1-on-1 friend chat supporting real-time text + image sharing + unread tracking.
+/// Direct 1-on-1 friend chat supporting real-time text, images, call logs & exact unread counts.
 class ChatRepository {
   ChatRepository({
     FirebaseFirestore? firestore,
@@ -55,11 +55,23 @@ class ChatRepository {
     });
   }
 
-  /// Streams unread direct chat threads for [uid] (drives the notification bell).
+  /// Streams unread direct chat threads for [uid] (drives the notification bell & badges).
   Stream<List<DirectChatSummary>> watchUnreadChats(String uid) {
     return watchUserChats(uid).map(
       (chats) => chats.where((c) => c.isUnreadFor(uid)).toList(growable: false),
     );
+  }
+
+  /// Streams a map of friendUid -> DirectChatSummary for per-friend unread counts & previews.
+  Stream<Map<String, DirectChatSummary>> watchChatsByFriend(String uid) {
+    return watchUserChats(uid).map((chats) {
+      final map = <String, DirectChatSummary>{};
+      for (final c in chats) {
+        final other = c.otherParticipantUid(uid);
+        if (other.isNotEmpty) map[other] = c;
+      }
+      return map;
+    });
   }
 
   /// Ensures the parent chat thread doc exists before subscribing to messages.
@@ -73,7 +85,9 @@ class ChatRepository {
         'participants': [meUid, friendUid]..sort(),
         'lastMessage': '',
         'lastSenderUid': '',
+        'lastSenderName': '',
         'unreadBy': <String>[],
+        'unreadCounts': {meUid: 0, friendUid: 0},
         'lastMessageAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -99,8 +113,29 @@ class ChatRepository {
     try {
       await _chatRef(chatId).update({
         'unreadBy': FieldValue.arrayRemove([uid]),
+        'unreadCounts.$uid': 0,
       });
     } catch (_) {}
+  }
+
+  /// Marks all given chat threads read for the current user immediately.
+  Future<void> markAllChatsRead(List<String> chatIds) async {
+    if (chatIds.isEmpty) return;
+    final uid = currentUid;
+    final batch = _db.batch();
+    for (final chatId in chatIds) {
+      batch.update(_chatRef(chatId), {
+        'unreadBy': FieldValue.arrayRemove([uid]),
+        'unreadCounts.$uid': 0,
+      });
+    }
+    try {
+      await batch.commit();
+    } catch (_) {
+      for (final chatId in chatIds) {
+        await markChatRead(chatId);
+      }
+    }
   }
 
   Future<void> sendMessage({
@@ -122,8 +157,7 @@ class ChatRepository {
     final chatRef = _chatRef(chatId);
 
     final effectiveType = msgType ?? (hasImage ? 'image' : 'text');
-    final preview =
-        trimmed.isNotEmpty ? trimmed : '📷 Shared an image';
+    final preview = trimmed.isNotEmpty ? trimmed : '📷 Shared an image';
 
     final batch = _db.batch();
     batch.set(chatRef.collection('messages').doc(), {
@@ -137,8 +171,10 @@ class ChatRepository {
     batch.update(chatRef, {
       'lastMessage': preview.length > 120 ? preview.substring(0, 120) : preview,
       'lastSenderUid': meUid,
+      'lastSenderName': senderName,
       'lastMessageAt': FieldValue.serverTimestamp(),
-      'unreadBy': [friendUid],
+      'unreadBy': FieldValue.arrayUnion([friendUid]),
+      'unreadCounts.$friendUid': FieldValue.increment(1),
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await batch.commit();

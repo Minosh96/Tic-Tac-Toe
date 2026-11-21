@@ -1,7 +1,11 @@
 package com.melowlabs.melow_tic_tac_toe
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
@@ -10,6 +14,7 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.RingtoneManager
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
@@ -19,6 +24,8 @@ import android.os.Looper
 import android.os.Process
 import android.util.Base64
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -33,7 +40,11 @@ import kotlin.math.sqrt
 class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "melow/audio_call"
+        private const val NOTIF_CHANNEL = "melow/notifications"
         private const val REQ_RECORD_AUDIO = 4091
+        private const val REQ_POST_NOTIFICATIONS = 4092
+        private const val NOTIF_CH_MESSAGES = "melow_messages"
+        private const val NOTIF_CH_CALLS = "melow_calls"
         private const val SAMPLE_RATE = 8000
         private const val FRAME_SAMPLES = 160 // 20ms at 8kHz
         private const val PACKET_FRAMES = 16 // 320ms per transmitted speech packet
@@ -45,6 +56,7 @@ class MainActivity : FlutterActivity() {
 
     private var methodChannel: MethodChannel? = null
     private var pendingMicResult: MethodChannel.Result? = null
+    private var pendingNotifResult: MethodChannel.Result? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // Hands-free real-time full-duplex audio engine state
@@ -64,6 +76,63 @@ class MainActivity : FlutterActivity() {
 
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel = channel
+        ensureNotificationChannels()
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIF_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "requestNotificationPermission" -> {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                            result.success(true)
+                        } else if (ContextCompat.checkSelfPermission(
+                                this,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            result.success(true)
+                        } else {
+                            pendingNotifResult?.success(false)
+                            pendingNotifResult = result
+                            ActivityCompat.requestPermissions(
+                                this,
+                                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                                REQ_POST_NOTIFICATIONS
+                            )
+                        }
+                    }
+
+                    "showMessageNotification" -> {
+                        val notifId = call.argument<Int>("id") ?: 1001
+                        val title = call.argument<String>("title") ?: "New Message"
+                        val body = call.argument<String>("body") ?: ""
+                        val count = call.argument<Int>("count") ?: 1
+                        showMessageNotification(notifId, title, body, count)
+                        result.success(true)
+                    }
+
+                    "showCallNotification" -> {
+                        val callId = call.argument<String>("callId") ?: "call"
+                        val callerName = call.argument<String>("callerName") ?: "Friend"
+                        showCallNotification(callId, callerName)
+                        result.success(true)
+                    }
+
+                    "cancelCallNotification" -> {
+                        val callId = call.argument<String>("callId") ?: "call"
+                        NotificationManagerCompat.from(this)
+                            .cancel(callNotificationId(callId))
+                        result.success(true)
+                    }
+
+                    "cancelMessageNotification" -> {
+                        val notifId = call.argument<Int>("id") ?: 1001
+                        NotificationManagerCompat.from(this).cancel(notifId)
+                        result.success(true)
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
 
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -481,6 +550,101 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 
+    private fun ensureNotificationChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        val msgChannel = NotificationChannel(
+            NOTIF_CH_MESSAGES,
+            "Chat Messages",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Notifications for new friend chat messages"
+            enableVibration(true)
+            setShowBadge(true)
+        }
+        nm.createNotificationChannel(msgChannel)
+
+        val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        val callAudioAttr = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val callChannel = NotificationChannel(
+            NOTIF_CH_CALLS,
+            "Voice Calls",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Incoming voice calls from friends"
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0, 450, 250, 450)
+            setSound(ringtoneUri, callAudioAttr)
+            setShowBadge(true)
+        }
+        nm.createNotificationChannel(callChannel)
+    }
+
+    private fun canPostNotifications(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun createOpenAppPendingIntent(reqCode: Int): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        return PendingIntent.getActivity(this, reqCode, intent, flags)
+    }
+
+    private fun showMessageNotification(notifId: Int, title: String, body: String, count: Int) {
+        if (!canPostNotifications()) return
+        ensureNotificationChannels()
+        val builder = NotificationCompat.Builder(this, NOTIF_CH_MESSAGES)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setNumber(count)
+            .setContentIntent(createOpenAppPendingIntent(notifId))
+        try {
+            NotificationManagerCompat.from(this).notify(notifId, builder.build())
+        } catch (_: SecurityException) {
+        }
+    }
+
+    private fun callNotificationId(callId: String): Int =
+        200000 + (callId.hashCode() and 0x7FFF)
+
+    private fun showCallNotification(callId: String, callerName: String) {
+        if (!canPostNotifications()) return
+        ensureNotificationChannels()
+        val id = callNotificationId(callId)
+        val builder = NotificationCompat.Builder(this, NOTIF_CH_CALLS)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Incoming Voice Call")
+            .setContentText("$callerName is calling you on Melow Tic Tac Toe")
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setAutoCancel(true)
+            .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
+            .setContentIntent(createOpenAppPendingIntent(id))
+        try {
+            NotificationManagerCompat.from(this).notify(id, builder.build())
+        } catch (_: SecurityException) {
+        }
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -492,6 +656,11 @@ class MainActivity : FlutterActivity() {
                 grantResults[0] == PackageManager.PERMISSION_GRANTED
             pendingMicResult?.success(granted)
             pendingMicResult = null
+        } else if (requestCode == REQ_POST_NOTIFICATIONS) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            pendingNotifResult?.success(granted)
+            pendingNotifResult = null
         }
     }
 }

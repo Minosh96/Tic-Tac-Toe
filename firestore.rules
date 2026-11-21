@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ===============================================================
-// Assumed Data Model — Melow Tic Tac Toe v3.1
+// Assumed Data Model — Melow Tic Tac Toe v3.3
 // ===============================================================
 //
 // Collection: rooms/{roomId}
@@ -130,7 +130,7 @@ rules_version = '2';
 //
 // Collection: friendChallenges/{challengeId}
 // Fields:
-//   - senderUid: string (required, == auth.uid on create, immutable)
+//   - senderUid: string (required, == auth.uid on create, immutable; sender may delete)
 //   - senderName: string (required, 1..20, immutable)
 //   - senderAvatar: string (optional, nullable, 0..32, immutable)
 //   - senderEmoji: string (optional, nullable, 0..16, immutable)
@@ -140,7 +140,7 @@ rules_version = '2';
 //   - boardSize: int (required, 3 | 4 | 5 | 6, immutable)
 //   - bestOf: int (required, 3 | 5, immutable)
 //   - roomId: string (optional, nullable, 0..6; required 6 chars on accept)
-//   - status: string (required, 'pending' on create -> 'accepted'|'declined'|'cancelled')
+//   - status: string (required, 'pending' -> 'accepted'|'declined'|'cancelled'; 'accepted' -> 'cancelled' by sender)
 //   - createdAt: timestamp (required, == request.time on create, immutable)
 //   - expiresAt: timestamp (optional, nullable, immutable)
 //
@@ -194,8 +194,10 @@ rules_version = '2';
 //   - participants: list<string> (required, size == 2, immutable)
 //   - lastMessage: string (optional, nullable, 0..500)
 //   - lastSenderUid: string (optional, nullable, 0..128)
+//   - lastSenderName: string (optional, nullable, 0..20)
 //   - lastMessageAt: timestamp (optional, nullable)
 //   - unreadBy: list (<=2 UIDs) | map (<=2 keys) | string (0..128) (optional, nullable)
+//   - unreadCounts: map<uid, int> (optional, nullable, <=2 keys subset of participants, 0..1000000)
 //   - updatedAt: timestamp (optional, nullable)
 //
 // Subcollection: chats/{chatId}/messages/{messageId}
@@ -320,6 +322,17 @@ service cloud.firestore {
         isStringLen(d.unreadBy, 0, 128) ||
         isValidUidListMax2(d.unreadBy) ||
         (d.unreadBy is map && d.unreadBy.size() <= 2);
+    }
+
+    function isValidUnreadCounts(d) {
+      return !('unreadCounts' in d) ||
+        d.unreadCounts == null || (
+          d.unreadCounts is map &&
+          d.unreadCounts.size() <= 2 &&
+          d.unreadCounts.keys().hasOnly(d.participants) &&
+          (!(d.participants[0] in d.unreadCounts) || isNonNegInt(d.unreadCounts[d.participants[0]], 1000000)) &&
+          (!(d.participants[1] in d.unreadCounts) || isNonNegInt(d.unreadCounts[d.participants[1]], 1000000))
+        );
     }
 
     function isOptionalWheelPayload(data, field) {
@@ -783,8 +796,8 @@ service cloud.firestore {
     function isValidChat(d, chatId) {
       return isStringLen(chatId, 3, 260) &&
         d.keys().hasOnly([
-          'participants', 'lastMessage', 'lastSenderUid',
-          'lastMessageAt', 'unreadBy', 'updatedAt'
+          'participants', 'lastMessage', 'lastSenderUid', 'lastSenderName',
+          'lastMessageAt', 'unreadBy', 'unreadCounts', 'updatedAt'
         ]) &&
         d.keys().hasAll(['participants']) &&
         isValidUidPair(d.participants) &&
@@ -792,8 +805,10 @@ service cloud.firestore {
         isOptionalNullableString(d, 'lastSenderUid', 0, 128) &&
         (!('lastSenderUid' in d) || d.lastSenderUid == null || d.lastSenderUid == '' ||
           d.lastSenderUid in d.participants) &&
+        isOptionalNullableString(d, 'lastSenderName', 0, 20) &&
         isOptionalNullableTimestamp(d, 'lastMessageAt') &&
         isValidUnreadBy(d) &&
+        isValidUnreadCounts(d) &&
         isOptionalNullableTimestamp(d, 'updatedAt');
     }
 
@@ -1142,13 +1157,13 @@ service cloud.firestore {
 
       allow update: if signedIn() &&
         isValidFriendChallenge(request.resource.data) &&
-        resource.data.status == 'pending' &&
         areImmutableFieldsUnchanged([
           'senderUid', 'senderName', 'senderAvatar', 'senderEmoji',
           'receiverUid', 'receiverName',
           'mode', 'boardSize', 'bestOf', 'createdAt', 'expiresAt'
         ]) && (
           (
+            resource.data.status == 'pending' &&
             resource.data.receiverUid == request.auth.uid &&
             request.resource.data.status == 'accepted' &&
             request.resource.data.roomId is string &&
@@ -1157,19 +1172,21 @@ service cloud.firestore {
           )
           ||
           (
+            resource.data.status == 'pending' &&
             resource.data.receiverUid == request.auth.uid &&
             request.resource.data.status == 'declined' &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
           )
           ||
           (
+            resource.data.status in ['pending', 'accepted'] &&
             resource.data.senderUid == request.auth.uid &&
             request.resource.data.status == 'cancelled' &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
           )
         );
 
-      allow delete: if false;
+      allow delete: if signedIn() && resource.data.senderUid == request.auth.uid;
     }
 
     // ===============================================================

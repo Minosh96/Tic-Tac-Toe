@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/services/app_services.dart';
 import '../../../core/services/image_helper.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../../../domain/models/social_models.dart';
 import '../../core/widgets/live_user_avatar.dart';
 import 'voice_call_screen.dart';
@@ -42,6 +43,7 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
   @override
   void initState() {
     super.initState();
+    PushNotificationService.activeChatFriendUid = widget.friendUid;
     _initThread();
   }
 
@@ -52,6 +54,7 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
       final id =
           await widget.services.chat.ensureChatThread(widget.friendUid);
       await widget.services.chat.markChatRead(id);
+      await PushNotificationService.cancelMessageNotification(id);
       if (!mounted) return;
       setState(() {
         _chatId = id;
@@ -71,6 +74,9 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
 
   @override
   void dispose() {
+    if (PushNotificationService.activeChatFriendUid == widget.friendUid) {
+      PushNotificationService.activeChatFriendUid = null;
+    }
     _inputController.dispose();
     super.dispose();
   }
@@ -262,6 +268,9 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
                         final items = snapshot.data!;
                         if (items.isNotEmpty) {
                           widget.services.chat.markChatRead(_chatId!);
+                          PushNotificationService.cancelMessageNotification(
+                            _chatId!,
+                          );
                         }
                         if (items.isEmpty) {
                           return Center(

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/services/app_services.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../../../core/services/sound_service.dart';
 import '../../../domain/models/social_models.dart';
 import '../../core/app_theme.dart';
@@ -12,7 +15,8 @@ import '../leaderboard/leaderboard_page.dart';
 import '../profile/profile_page.dart';
 import '../trophies/trophies_page.dart';
 
-/// Main 5-tab navigation shell with global incoming voice call banner & live badges.
+/// Main 5-tab navigation shell with live Android notifications for messages & calls,
+/// global incoming voice call banner, and exact unread message count badges.
 class MainShell extends StatefulWidget {
   const MainShell({super.key, required this.services});
 
@@ -22,8 +26,98 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _index = 0;
+  bool _appInForeground = true;
+
+  StreamSubscription<List<DirectChatSummary>>? _chatNotifSub;
+  StreamSubscription<List<VoiceCallSession>>? _callNotifSub;
+
+  bool _chatsSeeded = false;
+  final Map<String, DateTime?> _lastNotifiedMsgAt = <String, DateTime?>{};
+  final Set<String> _activeRingingCallIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initNotifications();
+  }
+
+  Future<void> _initNotifications() async {
+    await PushNotificationService.requestPermission();
+    if (!mounted) return;
+    final uid = widget.services.game.currentUid;
+
+    _chatNotifSub = widget.services.chat.watchUserChats(uid).listen((chats) {
+      if (!_chatsSeeded) {
+        _chatsSeeded = true;
+        for (final c in chats) {
+          _lastNotifiedMsgAt[c.chatId] = c.lastMessageAt;
+        }
+        return;
+      }
+
+      for (final c in chats) {
+        final prevAt = _lastNotifiedMsgAt[c.chatId];
+        final nextAt = c.lastMessageAt;
+        final isNewer = nextAt != null && (prevAt == null || nextAt.isAfter(prevAt));
+        if (!isNewer) continue;
+        _lastNotifiedMsgAt[c.chatId] = nextAt;
+
+        if (c.lastSenderUid == uid || !c.isUnreadFor(uid)) continue;
+        final otherUid = c.otherParticipantUid(uid);
+        final viewingThisChat = _appInForeground &&
+            PushNotificationService.activeChatFriendUid == otherUid;
+        if (viewingThisChat) continue;
+
+        final sender =
+            c.lastSenderName.isNotEmpty ? c.lastSenderName : 'New Message';
+        PushNotificationService.showMessageNotification(
+          chatId: c.chatId,
+          senderName: sender,
+          messagePreview: c.lastMessage,
+          unreadCount: c.unreadCountFor(uid),
+        );
+      }
+    });
+
+    _callNotifSub =
+        widget.services.voiceCall.watchIncomingCalls(uid).listen((calls) {
+      final currentIds = calls.map((c) => c.callId).toSet();
+
+      // Dismiss notifications for calls that stopped ringing.
+      for (final oldId in _activeRingingCallIds.difference(currentIds)) {
+        PushNotificationService.cancelCallNotification(oldId);
+      }
+
+      // Post high-priority Android call notification for newly ringing calls.
+      for (final call in calls) {
+        if (_activeRingingCallIds.add(call.callId)) {
+          PushNotificationService.showCallNotification(
+            callId: call.callId,
+            callerName: call.callerName,
+          );
+        }
+      }
+      _activeRingingCallIds
+        ..clear()
+        ..addAll(currentIds);
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appInForeground = state == AppLifecycleState.resumed;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _chatNotifSub?.cancel();
+    _callNotifSub?.cancel();
+    super.dispose();
+  }
 
   void _goToTab(int idx) {
     if (idx == _index) return;
@@ -112,8 +206,13 @@ class _MainShellState extends State<MainShell> {
                               Icons.call_end_rounded,
                               color: Colors.redAccent,
                             ),
-                            onPressed: () => widget.services.voiceCall
-                                .declineCall(incoming.callId),
+                            onPressed: () {
+                              PushNotificationService.cancelCallNotification(
+                                incoming.callId,
+                              );
+                              widget.services.voiceCall
+                                  .declineCall(incoming.callId);
+                            },
                           ),
                           IconButton.filled(
                             tooltip: 'Answer',
@@ -124,15 +223,20 @@ class _MainShellState extends State<MainShell> {
                               Icons.call_rounded,
                               color: Colors.white,
                             ),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => VoiceCallScreen.incoming(
-                                  services: widget.services,
-                                  session: incoming,
+                            onPressed: () {
+                              PushNotificationService.cancelCallNotification(
+                                incoming.callId,
+                              );
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => VoiceCallScreen.incoming(
+                                    services: widget.services,
+                                    session: incoming,
+                                  ),
                                 ),
-                              ),
-                            ),
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -153,9 +257,13 @@ class _MainShellState extends State<MainShell> {
               return StreamBuilder<List<DirectChatSummary>>(
                 stream: widget.services.chat.watchUnreadChats(uid),
                 builder: (context, chatSnap) {
+                  final unreadMessages = (chatSnap.data ?? const []).fold<int>(
+                    0,
+                    (sum, c) => sum + c.unreadCountFor(uid),
+                  );
                   final pendingCount = (chalSnap.data?.length ?? 0) +
                       (reqSnap.data?.length ?? 0) +
-                      (chatSnap.data?.length ?? 0);
+                      unreadMessages;
                   return NavigationBar(
                     selectedIndex: _index,
                     onDestinationSelected: _goToTab,
@@ -168,12 +276,16 @@ class _MainShellState extends State<MainShell> {
                       NavigationDestination(
                         icon: Badge(
                           isLabelVisible: pendingCount > 0,
-                          label: Text('$pendingCount'),
+                          label: Text(
+                            pendingCount > 99 ? '99+' : '$pendingCount',
+                          ),
                           child: const Icon(Icons.groups_outlined),
                         ),
                         selectedIcon: Badge(
                           isLabelVisible: pendingCount > 0,
-                          label: Text('$pendingCount'),
+                          label: Text(
+                            pendingCount > 99 ? '99+' : '$pendingCount',
+                          ),
                           child: const Icon(Icons.groups_rounded),
                         ),
                         label: 'Friends',

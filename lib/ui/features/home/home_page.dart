@@ -787,60 +787,85 @@ class _HomePageState extends State<HomePage> {
                                       ],
                                     ),
                                     SizedBox(
-                                      height: 86,
-                                      child: ListView.separated(
-                                        scrollDirection: Axis.horizontal,
-                                        itemCount: friends.length.clamp(0, 8),
-                                        separatorBuilder: (_, __) =>
-                                            const SizedBox(width: 12),
-                                        itemBuilder: (context, idx) {
-                                          final f = friends[idx];
-                                          return InkWell(
-                                            borderRadius:
-                                                BorderRadius.circular(14),
-                                            onTap: () => Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    FriendChatScreen(
-                                                  services: widget.services,
-                                                  friendUid: f.friendUid,
-                                                  friendName: f.nickname,
-                                                  friendAvatar: f.avatarId,
-                                                  friendPhotoBase64:
-                                                      f.photoBase64,
-                                                ),
-                                              ),
-                                            ),
-                                            child: SizedBox(
-                                              width: 70,
-                                              child: Column(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                children: [
-                                                  LiveUserAvatar(
-                                                    services: widget.services,
-                                                    uid: f.friendUid,
-                                                    fallbackAvatarId: f.avatarId,
-                                                    fallbackPhotoBase64:
-                                                        f.photoBase64,
-                                                    size: 46,
-                                                  ),
-                                                  const SizedBox(height: 6),
-                                                  Text(
-                                                    f.nickname,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.w700,
+                                      height: 90,
+                                      child: StreamBuilder<
+                                          Map<String, DirectChatSummary>>(
+                                        stream: widget.services.chat
+                                            .watchChatsByFriend(uid),
+                                        builder: (context, chatMapSnap) {
+                                          final chatMap =
+                                              chatMapSnap.data ?? const {};
+                                          return ListView.separated(
+                                            scrollDirection: Axis.horizontal,
+                                            itemCount:
+                                                friends.length.clamp(0, 8),
+                                            separatorBuilder: (_, __) =>
+                                                const SizedBox(width: 12),
+                                            itemBuilder: (context, idx) {
+                                              final f = friends[idx];
+                                              final unread = chatMap[f.friendUid]
+                                                      ?.unreadCountFor(uid) ??
+                                                  0;
+                                              return InkWell(
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                                onTap: () => Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        FriendChatScreen(
+                                                      services: widget.services,
+                                                      friendUid: f.friendUid,
+                                                      friendName: f.nickname,
+                                                      friendAvatar: f.avatarId,
+                                                      friendPhotoBase64:
+                                                          f.photoBase64,
                                                     ),
                                                   ),
-                                                ],
-                                              ),
-                                            ),
+                                                ),
+                                                child: SizedBox(
+                                                  width: 72,
+                                                  child: Column(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
+                                                    children: [
+                                                      Badge(
+                                                        isLabelVisible:
+                                                            unread > 0,
+                                                        label: Text(
+                                                          unread > 99
+                                                              ? '99+'
+                                                              : '$unread',
+                                                        ),
+                                                        child: LiveUserAvatar(
+                                                          services:
+                                                              widget.services,
+                                                          uid: f.friendUid,
+                                                          fallbackAvatarId:
+                                                              f.avatarId,
+                                                          fallbackPhotoBase64:
+                                                              f.photoBase64,
+                                                          size: 46,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 6),
+                                                      Text(
+                                                        f.nickname,
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              );
+                                            },
                                           );
                                         },
                                       ),
@@ -897,17 +922,22 @@ class _NotificationBellButton extends StatelessWidget {
                         final acceptedOut = (outSnap.data ?? const [])
                             .where((c) => c.isAccepted && c.roomId.isNotEmpty)
                             .length;
+                        final unreadMessages = (chatSnap.data ?? const [])
+                            .fold<int>(
+                              0,
+                              (sum, c) => sum + c.unreadCountFor(uid),
+                            );
                         final count = (callSnap.data?.length ?? 0) +
                             (reqSnap.data?.length ?? 0) +
                             (chalSnap.data?.length ?? 0) +
                             acceptedOut +
-                            (chatSnap.data?.length ?? 0);
+                            unreadMessages;
                         return IconButton(
                           tooltip: 'Notifications',
                           onPressed: onPressed,
                           icon: Badge(
                             isLabelVisible: count > 0,
-                            label: Text('$count'),
+                            label: Text(count > 99 ? '99+' : '$count'),
                             child: Icon(
                               count > 0
                                   ? Icons.notifications_active_rounded

@@ -241,14 +241,37 @@ void main() {
     expect(regularMsg.isCallLog, isFalse);
   });
 
-  testWidgets('AboutScreen shows v3.2 branding and Melow Labs credit', (
+  test('DirectChatSummary tracks exact per-user unread counts & legacy fallback', () {
+    const summary = DirectChatSummary(
+      chatId: 'u1_u2',
+      participants: ['u1', 'u2'],
+      lastMessage: 'Hello!',
+      lastSenderUid: 'u1',
+      lastSenderName: 'Minosh',
+      unreadBy: ['u2'],
+      unreadCounts: {'u1': 0, 'u2': 4},
+    );
+    const legacy = DirectChatSummary(
+      chatId: 'u1_u2',
+      participants: ['u1', 'u2'],
+      lastMessage: 'Hi',
+      lastSenderUid: 'u1',
+      unreadBy: ['u2'],
+    );
+    expect(summary.unreadCountFor('u2'), 4);
+    expect(summary.unreadCountFor('u1'), 0);
+    expect(summary.otherParticipantUid('u1'), 'u2');
+    expect(legacy.unreadCountFor('u2'), 1);
+  });
+
+  testWidgets('AboutScreen shows v3.3 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 3.2.0 (Build 8)'), findsOneWidget);
+    expect(find.text('Version 3.3.0 (Build 9)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,

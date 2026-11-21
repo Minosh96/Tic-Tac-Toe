@@ -157,7 +157,9 @@ class DirectChatSummary {
     required this.participants,
     required this.lastMessage,
     required this.lastSenderUid,
+    this.lastSenderName = '',
     required this.unreadBy,
+    this.unreadCounts = const <String, int>{},
     this.lastMessageAt,
   });
 
@@ -165,15 +167,33 @@ class DirectChatSummary {
   final List<String> participants;
   final String lastMessage;
   final String lastSenderUid;
+  final String lastSenderName;
   final List<String> unreadBy;
+  final Map<String, int> unreadCounts;
   final DateTime? lastMessageAt;
 
-  bool isUnreadFor(String uid) => unreadBy.contains(uid);
+  int unreadCountFor(String uid) {
+    final c = unreadCounts[uid] ?? 0;
+    if (c > 0) return c;
+    return unreadBy.contains(uid) ? 1 : 0;
+  }
+
+  bool isUnreadFor(String uid) => unreadCountFor(uid) > 0;
+
+  String otherParticipantUid(String myUid) =>
+      participants.firstWhere((p) => p != myUid, orElse: () => '');
 
   factory DirectChatSummary.fromFirestore(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data();
+    final rawCounts = data['unreadCounts'];
+    final counts = <String, int>{};
+    if (rawCounts is Map) {
+      for (final entry in rawCounts.entries) {
+        counts[entry.key.toString()] = (entry.value as num?)?.toInt() ?? 0;
+      }
+    }
     return DirectChatSummary(
       chatId: doc.id,
       participants: (data['participants'] as List? ?? const [])
@@ -181,9 +201,11 @@ class DirectChatSummary {
           .toList(growable: false),
       lastMessage: data['lastMessage'] as String? ?? '',
       lastSenderUid: data['lastSenderUid'] as String? ?? '',
+      lastSenderName: data['lastSenderName'] as String? ?? '',
       unreadBy: (data['unreadBy'] as List? ?? const [])
           .map((e) => e.toString())
           .toList(growable: false),
+      unreadCounts: counts,
       lastMessageAt: data['lastMessageAt'] is Timestamp
           ? (data['lastMessageAt'] as Timestamp).toDate()
           : null,

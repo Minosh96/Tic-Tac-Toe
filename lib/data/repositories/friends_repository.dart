@@ -350,4 +350,23 @@ class FriendsRepository {
         .doc(challengeId)
         .update({'status': 'cancelled'});
   }
+
+  /// Permanently removes a previously sent challenge (pending or accepted).
+  Future<void> removeSentChallenge(String challengeId) async {
+    try {
+      await _db.collection('friendChallenges').doc(challengeId).delete();
+    } catch (_) {
+      await cancelFriendChallenge(challengeId);
+    }
+  }
+
+  /// Removes multiple previously sent challenges in one batch.
+  Future<void> clearAllSentChallenges(List<String> challengeIds) async {
+    if (challengeIds.isEmpty) return;
+    final batch = _db.batch();
+    for (final id in challengeIds) {
+      batch.delete(_db.collection('friendChallenges').doc(id));
+    }
+    await batch.commit();
+  }
 }

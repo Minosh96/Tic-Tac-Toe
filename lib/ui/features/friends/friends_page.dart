@@ -504,7 +504,7 @@ class _FriendsPageState extends State<FriendsPage> {
                         );
                       },
                     ),
-                    // Outgoing Accepted Challenges
+                    // Outgoing Sent Challenges (with per-item Remove & Clear All)
                     StreamBuilder<List<FriendChallenge>>(
                       stream:
                           widget.services.friends.watchOutgoingChallenges(uid),
@@ -514,14 +514,39 @@ class _FriendsPageState extends State<FriendsPage> {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Sent Challenges',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                              ),
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Sent Challenges',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                                if (list.length > 1)
+                                  TextButton.icon(
+                                    onPressed: () async {
+                                      try {
+                                        await widget.services.friends
+                                            .clearAllSentChallenges(
+                                          list.map((c) => c.id).toList(),
+                                        );
+                                        _snack('Cleared all sent challenges.');
+                                      } catch (e) {
+                                        _snack('$e');
+                                      }
+                                    },
+                                    icon: const Icon(
+                                      Icons.delete_sweep_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Clear All'),
+                                  ),
+                              ],
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             for (final c in list)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
@@ -535,13 +560,20 @@ class _FriendsPageState extends State<FriendsPage> {
                                     ),
                                     subtitle: Text(
                                       c.isAccepted
-                                          ? 'Accepted! Tap Join to start.'
-                                          : 'Pending • ${c.boardSize}×${c.boardSize}',
+                                          ? 'Accepted! Tap Join or remove.'
+                                          : 'Pending • ${c.boardSize}×${c.boardSize} • BO${c.bestOf}',
                                     ),
-                                    trailing: c.isAccepted && c.roomId.isNotEmpty
-                                        ? FilledButton(
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (c.isAccepted && c.roomId.isNotEmpty)
+                                          FilledButton(
                                             style: FilledButton.styleFrom(
-                                              minimumSize: const Size(76, 40),
+                                              minimumSize: const Size(64, 38),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                              ),
                                             ),
                                             onPressed: me == null
                                                 ? null
@@ -559,6 +591,10 @@ class _FriendsPageState extends State<FriendsPage> {
                                                               me.avatarId,
                                                         );
                                                       } catch (_) {}
+                                                      await widget
+                                                          .services.friends
+                                                          .removeSentChallenge(
+                                                              c.id);
                                                       if (!context.mounted) {
                                                         return;
                                                       }
@@ -578,13 +614,24 @@ class _FriendsPageState extends State<FriendsPage> {
                                                     }
                                                   },
                                             child: const Text('Join'),
-                                          )
-                                        : TextButton(
-                                            onPressed: () => widget
-                                                .services.friends
-                                                .cancelFriendChallenge(c.id),
-                                            child: const Text('Cancel'),
                                           ),
+                                        IconButton(
+                                          tooltip: 'Remove challenge',
+                                          icon: const Icon(
+                                            Icons.delete_outline_rounded,
+                                          ),
+                                          onPressed: () async {
+                                            try {
+                                              await widget.services.friends
+                                                  .removeSentChallenge(c.id);
+                                              _snack('Challenge removed.');
+                                            } catch (e) {
+                                              _snack('$e');
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -706,219 +753,315 @@ class _FriendsPageState extends State<FriendsPage> {
                             ),
                           );
                         }
-                        return Column(
-                          children: [
-                            for (final f in friends)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: Card(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          children: [
-                                            LiveUserAvatar(
-                                              services: widget.services,
-                                              uid: f.friendUid,
-                                              fallbackAvatarId: f.avatarId,
-                                              fallbackPhotoBase64: f.photoBase64,
-                                              size: 46,
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    f.nickname,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                      fontSize: 15,
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    'Chat, call, or start a rivalry',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: scheme
-                                                          .onSurfaceVariant,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            PopupMenuButton<String>(
-                                              onSelected: (action) async {
-                                                if (action == 'rivalry') {
-                                                  Navigator.push(
-                                                    context,
-                                                    MaterialPageRoute(
-                                                      builder: (_) =>
-                                                          RivalryScreen(
+                        return StreamBuilder<Map<String, DirectChatSummary>>(
+                          stream: widget.services.chat.watchChatsByFriend(uid),
+                          builder: (context, chatMapSnap) {
+                            final chatsByFriend = chatMapSnap.data ?? const {};
+                            return Column(
+                              children: [
+                                for (final f in friends)
+                                  Builder(
+                                    builder: (context) {
+                                      final chatSummary =
+                                          chatsByFriend[f.friendUid];
+                                      final unread =
+                                          chatSummary?.unreadCountFor(uid) ?? 0;
+                                      final previewText =
+                                          chatSummary != null &&
+                                                  chatSummary
+                                                      .lastMessage.isNotEmpty
+                                              ? chatSummary.lastMessage
+                                              : 'Chat, call, or start a rivalry';
+                                      return Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 10),
+                                        child: Card(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Column(
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Badge(
+                                                      isLabelVisible:
+                                                          unread > 0,
+                                                      label: Text(
+                                                        unread > 99
+                                                            ? '99+'
+                                                            : '$unread',
+                                                      ),
+                                                      child: LiveUserAvatar(
                                                         services:
                                                             widget.services,
-                                                        opponentUid:
-                                                            f.friendUid,
-                                                        opponentName:
-                                                            f.nickname,
-                                                        opponentAvatar:
+                                                        uid: f.friendUid,
+                                                        fallbackAvatarId:
                                                             f.avatarId,
+                                                        fallbackPhotoBase64:
+                                                            f.photoBase64,
+                                                        size: 46,
+                                                        enableFullScreenPreview:
+                                                            true,
                                                       ),
                                                     ),
-                                                  );
-                                                } else if (action == 'remove') {
-                                                  await widget.services.friends
-                                                      .removeFriend(
-                                                          f.friendUid);
-                                                  _snack(
-                                                    'Removed ${f.nickname}.',
-                                                  );
-                                                } else if (action == 'block') {
-                                                  await widget.services.friends
-                                                      .blockUser(f.friendUid);
-                                                  _snack(
-                                                    'Blocked ${f.nickname}.',
-                                                  );
-                                                } else if (action == 'report') {
-                                                  await _openReportDialog(f);
-                                                }
-                                              },
-                                              itemBuilder: (_) => const [
-                                                PopupMenuItem(
-                                                  value: 'rivalry',
-                                                  child: Text('View Rivalry'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'remove',
-                                                  child: Text('Remove Friend'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'block',
-                                                  child: Text('Block Player'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'report',
-                                                  child: Text('Report Player'),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: OutlinedButton.icon(
-                                                style: OutlinedButton.styleFrom(
-                                                  minimumSize:
-                                                      const Size.fromHeight(42),
-                                                  padding: const EdgeInsets
-                                                      .symmetric(horizontal: 8),
-                                                ),
-                                                onPressed: () => Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (_) =>
-                                                        FriendChatScreen(
-                                                      services: widget.services,
-                                                      friendUid: f.friendUid,
-                                                      friendName: f.nickname,
-                                                      friendAvatar: f.avatarId,
-                                                      friendPhotoBase64:
-                                                          f.photoBase64,
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          Text(
+                                                            f.nickname,
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style:
+                                                                const TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w800,
+                                                              fontSize: 15,
+                                                            ),
+                                                          ),
+                                                          Text(
+                                                            previewText,
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              fontWeight: unread >
+                                                                      0
+                                                                  ? FontWeight
+                                                                      .w800
+                                                                  : FontWeight
+                                                                      .normal,
+                                                              color: unread > 0
+                                                                  ? scheme
+                                                                      .primary
+                                                                  : scheme
+                                                                      .onSurfaceVariant,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
                                                     ),
-                                                  ),
+                                                    PopupMenuButton<String>(
+                                                      onSelected:
+                                                          (action) async {
+                                                        if (action ==
+                                                            'rivalry') {
+                                                          Navigator.push(
+                                                            context,
+                                                            MaterialPageRoute(
+                                                              builder: (_) =>
+                                                                  RivalryScreen(
+                                                                services: widget
+                                                                    .services,
+                                                                opponentUid: f
+                                                                    .friendUid,
+                                                                opponentName:
+                                                                    f.nickname,
+                                                                opponentAvatar:
+                                                                    f.avatarId,
+                                                              ),
+                                                            ),
+                                                          );
+                                                        } else if (action ==
+                                                            'remove') {
+                                                          await widget
+                                                              .services.friends
+                                                              .removeFriend(
+                                                                  f.friendUid);
+                                                          _snack(
+                                                            'Removed ${f.nickname}.',
+                                                          );
+                                                        } else if (action ==
+                                                            'block') {
+                                                          await widget
+                                                              .services.friends
+                                                              .blockUser(
+                                                                  f.friendUid);
+                                                          _snack(
+                                                            'Blocked ${f.nickname}.',
+                                                          );
+                                                        } else if (action ==
+                                                            'report') {
+                                                          await _openReportDialog(
+                                                              f);
+                                                        }
+                                                      },
+                                                      itemBuilder: (_) =>
+                                                          const [
+                                                        PopupMenuItem(
+                                                          value: 'rivalry',
+                                                          child: Text(
+                                                              'View Rivalry'),
+                                                        ),
+                                                        PopupMenuItem(
+                                                          value: 'remove',
+                                                          child: Text(
+                                                              'Remove Friend'),
+                                                        ),
+                                                        PopupMenuItem(
+                                                          value: 'block',
+                                                          child: Text(
+                                                              'Block Player'),
+                                                        ),
+                                                        PopupMenuItem(
+                                                          value: 'report',
+                                                          child: Text(
+                                                              'Report Player'),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
                                                 ),
-                                                icon: const Icon(
-                                                  Icons.chat_rounded,
-                                                  size: 16,
-                                                ),
-                                                label: const FittedBox(
-                                                  fit: BoxFit.scaleDown,
-                                                  child: Text('Chat'),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: OutlinedButton.icon(
-                                                style: OutlinedButton.styleFrom(
-                                                  minimumSize:
-                                                      const Size.fromHeight(42),
-                                                  padding: const EdgeInsets
-                                                      .symmetric(horizontal: 8),
-                                                ),
-                                                onPressed: me == null
-                                                    ? null
-                                                    : () => Navigator.push(
+                                                const SizedBox(height: 10),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: OutlinedButton.icon(
+                                                        style: OutlinedButton
+                                                            .styleFrom(
+                                                          minimumSize:
+                                                              const Size
+                                                                  .fromHeight(
+                                                                  42),
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal:
+                                                                      8),
+                                                        ),
+                                                        onPressed: () =>
+                                                            Navigator.push(
                                                           context,
                                                           MaterialPageRoute(
                                                             builder: (_) =>
-                                                                VoiceCallScreen
-                                                                    .outgoing(
+                                                                FriendChatScreen(
                                                               services: widget
                                                                   .services,
-                                                              calleeUid:
+                                                              friendUid:
                                                                   f.friendUid,
-                                                              calleeName:
+                                                              friendName:
                                                                   f.nickname,
-                                                              calleeAvatar:
+                                                              friendAvatar:
                                                                   f.avatarId,
-                                                              callerName:
-                                                                  me.nickname,
-                                                              callerAvatar:
-                                                                  me.avatarId,
+                                                              friendPhotoBase64:
+                                                                  f.photoBase64,
                                                             ),
                                                           ),
                                                         ),
-                                                icon: const Icon(
-                                                  Icons.call_rounded,
-                                                  size: 16,
+                                                        icon: const Icon(
+                                                          Icons.chat_rounded,
+                                                          size: 16,
+                                                        ),
+                                                        label: FittedBox(
+                                                          fit: BoxFit.scaleDown,
+                                                          child: Text(
+                                                            unread > 0
+                                                                ? 'Chat ($unread)'
+                                                                : 'Chat',
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: OutlinedButton.icon(
+                                                        style: OutlinedButton
+                                                            .styleFrom(
+                                                          minimumSize:
+                                                              const Size
+                                                                  .fromHeight(
+                                                                  42),
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal:
+                                                                      8),
+                                                        ),
+                                                        onPressed: me == null
+                                                            ? null
+                                                            : () =>
+                                                                Navigator.push(
+                                                                  context,
+                                                                  MaterialPageRoute(
+                                                                    builder: (_) =>
+                                                                        VoiceCallScreen
+                                                                            .outgoing(
+                                                                      services:
+                                                                          widget
+                                                                              .services,
+                                                                      calleeUid:
+                                                                          f.friendUid,
+                                                                      calleeName:
+                                                                          f.nickname,
+                                                                      calleeAvatar:
+                                                                          f.avatarId,
+                                                                      callerName:
+                                                                          me.nickname,
+                                                                      callerAvatar:
+                                                                          me.avatarId,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                        icon: const Icon(
+                                                          Icons.call_rounded,
+                                                          size: 16,
+                                                        ),
+                                                        label: const FittedBox(
+                                                          fit: BoxFit.scaleDown,
+                                                          child: Text('Call'),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: FilledButton.icon(
+                                                        style: FilledButton
+                                                            .styleFrom(
+                                                          minimumSize:
+                                                              const Size
+                                                                  .fromHeight(
+                                                                  42),
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal:
+                                                                      8),
+                                                        ),
+                                                        onPressed: me == null
+                                                            ? null
+                                                            : () =>
+                                                                _openChallengeDialog(
+                                                                    me, f),
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .sports_esports_rounded,
+                                                          size: 16,
+                                                        ),
+                                                        label: const FittedBox(
+                                                          fit: BoxFit.scaleDown,
+                                                          child: Text('Play'),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
-                                                label: const FittedBox(
-                                                  fit: BoxFit.scaleDown,
-                                                  child: Text('Call'),
-                                                ),
-                                              ),
+                                              ],
                                             ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: FilledButton.icon(
-                                                style: FilledButton.styleFrom(
-                                                  minimumSize:
-                                                      const Size.fromHeight(42),
-                                                  padding: const EdgeInsets
-                                                      .symmetric(horizontal: 8),
-                                                ),
-                                                onPressed: me == null
-                                                    ? null
-                                                    : () =>
-                                                        _openChallengeDialog(
-                                                            me, f),
-                                                icon: const Icon(
-                                                  Icons.sports_esports_rounded,
-                                                  size: 16,
-                                                ),
-                                                label: const FittedBox(
-                                                  fit: BoxFit.scaleDown,
-                                                  child: Text('Play'),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                          ),
                                         ),
-                                      ],
-                                    ),
+                                      );
+                                    },
                                   ),
-                                ),
-                              ),
-                          ],
+                              ],
+                            );
+                          },
                         );
                       },
                     ),
