@@ -1203,7 +1203,11 @@ service cloud.firestore {
     }
 
     match /matches/{matchId} {
-      allow read: if signedIn() && (request.auth.uid in resource.data.players);
+      allow get: if signedIn() && (
+        resource == null ||
+        request.auth.uid in resource.data.players
+      );
+      allow list: if signedIn() && (request.auth.uid in resource.data.players);
 
       allow create: if signedIn() &&
         isValidMatch(request.resource.data, matchId) &&
@@ -1214,7 +1218,11 @@ service cloud.firestore {
     }
 
     match /rivalries/{rivalryId} {
-      allow read: if signedIn() && (request.auth.uid in resource.data.playerUids);
+      allow get: if signedIn() && (
+        (resource == null && rivalryId.matches('.*' + request.auth.uid + '.*')) ||
+        (resource != null && request.auth.uid in resource.data.playerUids)
+      );
+      allow list: if signedIn() && (request.auth.uid in resource.data.playerUids);
 
       allow create: if signedIn() &&
         isValidRivalry(request.resource.data, rivalryId) &&
