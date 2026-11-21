@@ -1,33 +1,34 @@
 # Publishing Melow Tic Tac Toe to the Google Play Store
 
-Complete step-by-step release checklist for **`com.melowlabs.melow_tic_tac_toe`**.
+Complete step-by-step Play Store publishing guide for **`com.melowlabs.melow_tic_tac_toe`** (v3.4.0+10).
+`android/app/build.gradle.kts`, `.github/workflows/android-release.yml`, and `docs/privacy.html` are **already configured** for release signing and `.aab` generation!
 
 ---
 
-## 1. Create a Google Play Developer Account
+## Step 1: Create Your Google Play Console Account
 
 1. Go to [Google Play Console](https://play.google.com/console) and register a developer account (one-time \$25 USD fee).
-2. Complete identity verification and payment profile.
-3. Note: New **personal** Play Console accounts (created after Nov 2023) require a **Closed Test** with at least **12 opted-in testers for 14 continuous days** before applying for Production access.
+2. Complete your identity verification.
+3. **Important for new personal accounts:** Google requires a **Closed Test** with at least **12 opted-in testers for 14 continuous days** before granting Production release access.
 
 ---
 
-## 2. Generate Your Android Upload Keystore (Keep Secret!)
+## Step 2: Generate Your Permanent Android Upload Keystore (Run Once!)
 
-Run this once on your machine (NEVER commit the `.jks` file or passwords to Git — they are already in `android/.gitignore`):
+Open PowerShell on your PC and run this command (replace passwords with strong ones and **save them safely** — never lose this `.jks` file!):
 
 ```powershell
 keytool -genkey -v -keystore "$env:USERPROFILE\melow-upload-keystore.jks" `
   -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 -alias upload
 ```
 
-Save your keystore file and passwords in a secure password manager / cloud backup.
+> **CRITICAL:** Never commit `.jks` or `key.properties` to Git (both are already listed in `.gitignore`). Back up `C:\Users\Minosh\melow-upload-keystore.jks` to Google Drive / a secure password manager.
 
 ---
 
-## 3. Configure Release Signing
+## Step 3: Create `android/key.properties`
 
-Create `android/key.properties` (this file is gitignored):
+Create a file at `android/key.properties` (already gitignored) with your exact passwords:
 
 ```properties
 storePassword=YOUR_STORE_PASSWORD
@@ -36,46 +37,22 @@ keyAlias=upload
 storeFile=C:\\Users\\Minosh\\melow-upload-keystore.jks
 ```
 
-Update `android/app/build.gradle.kts` to load `key.properties` and use `signingConfigs.getByName("release")` inside `buildTypes { release { ... } }`:
-
-```kotlin
-import java.util.Properties
-import java.io.FileInputStream
-
-val keystoreProperties = Properties()
-val keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-}
-
-android {
-    signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties.getProperty("keyAlias")
-            keyPassword = keystoreProperties.getProperty("keyPassword")
-            storeFile = keystoreProperties.getProperty("storeFile")?.let { file(it) }
-            storePassword = keystoreProperties.getProperty("storePassword")
-        }
-    }
-    buildTypes {
-        release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
-            isMinifyEnabled = true
-            isShrinkResources = true
-        }
-    }
-}
+*(Optional — enable permanent signing on GitHub Actions too so all future GitHub APKs update in-place without uninstalling!)*
+Encode your keystore to Base64:
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\melow-upload-keystore.jks")) | Set-Clipboard
 ```
+Then in GitHub → **Settings → Secrets and variables → Actions**, add 4 repository secrets:
+- `KEYSTORE_BASE64` (paste from clipboard)
+- `KEYSTORE_PASSWORD`
+- `KEY_ALIAS` (`upload`)
+- `KEY_PASSWORD`
 
 ---
 
-## 4. Build the Signed Android App Bundle (`.aab`)
+## Step 4: Build the Signed Google Play App Bundle (`.aab`)
 
-Google Play requires `.aab` (Android App Bundle) rather than `.apk`:
+Google Play requires an `.aab` (Android App Bundle), not `.apk`:
 
 ```powershell
 flutter clean
@@ -83,46 +60,72 @@ flutter pub get
 flutter build appbundle --release
 ```
 
-Your Play Store bundle will be created at:
-`build/app/outputs/bundle/release/app-release.aab`
+Your Play Store upload file will be at:
+```
+build\app\outputs\bundle\release\app-release.aab
+```
 
-*(Remember to increment `version: 3.0.0+3` -> `3.0.1+4` in `pubspec.yaml` before every new upload.)*
-
----
-
-## 5. Prepare Store Listing Assets
-
-1. **App Icon**: `512 × 512 px` PNG (replace `assets/images/melow_logo.png` with your final Melow Labs artwork first and run `dart run flutter_launcher_icons`).
-2. **Feature Graphic**: `1024 × 500 px` PNG/JPG banner.
-3. **Phone Screenshots**: At least 2–8 screenshots (`16:9` or `9:16`, e.g., Home Dashboard, Blitz Gameplay, Challenge Wheel, Trophies Cabinet, Friend Chat/Voice Call).
-4. **Short Description** (≤ 80 chars):
-   > Real-time emoji Tic-Tac-Toe with Blitz mode, trophies, friend chat & voice call!
-5. **Privacy Policy URL** (Required because the app uses Firebase Auth, Cloud Firestore, Gallery Photos & Microphone):
-   - Host a simple public Privacy Policy page (e.g., on GitHub Pages at `https://minosh96.github.io/Tic-Tac-Toe/privacy.html`) explaining:
-     - Anonymous Firebase Authentication UID & chosen nickname/avatar/photo
-     - Real-time match state, room chat (24h expiry), direct friend chat & shared images
-     - Microphone access used solely during user-initiated peer-to-peer WebRTC voice calls (not recorded)
-     - Data deletion contact email
+*(Before every future Play Store update, increment the build number in `pubspec.yaml`, e.g. `3.4.0+10` → `3.4.1+11`.)*
 
 ---
 
-## 6. Complete Play Console Declarations
+## Step 5: Publish Your Privacy Policy URL (2 Clicks via GitHub Pages)
 
-In **Play Console → App Content**:
-1. **Privacy Policy**: Paste your hosted Privacy Policy URL.
-2. **Data Safety**:
-   - Declare **App info / identifiers** (Anonymous Firebase UID), **User content** (chat messages, shared photos, profile photo/nickname), and **Audio** (ephemeral voice call audio — not stored on servers).
-   - Mark data as encrypted in transit (HTTPS/TLS + WebRTC DTLS-SRTP).
-3. **Content Rating (IARC)**: Complete the questionnaire (note user-to-user chat & voice interaction + built-in Block/Report controls).
-4. **Target Audience**: Select appropriate age group (e.g., 13+ due to free-form user chat & voice calls, avoiding COPPA/Families policy complications).
-5. **App Access**: All features are accessible without a special login (Anonymous Auth auto-signs in).
+`docs/privacy.html` is already in your repository! Publish it free on GitHub Pages:
+1. Open your GitHub repo: `https://github.com/Minosh96/Tic-Tac-Toe/settings/pages`
+2. Under **Build and deployment → Source**, choose **Deploy from a branch** → Branch: **`main`**, Folder: **`/docs`** → click **Save**.
+3. Wait ~60 seconds. Your live URLs for Play Console will be:
+   - **Privacy Policy URL:** `https://minosh96.github.io/Tic-Tac-Toe/privacy.html`
+   - **Data Deletion URL:** `https://minosh96.github.io/Tic-Tac-Toe/privacy.html#delete-data`
 
 ---
 
-## 7. Upload, Test & Publish
+## Step 6: Prepare Play Store Graphics & Listing Text
 
-1. Go to **Testing → Internal testing** (quickest check) or **Closed testing** → **Create new release**.
-2. Opt in to **Play App Signing** (recommended by Google).
-3. Upload `build/app/outputs/bundle/release/app-release.aab`.
-4. Add release notes, click **Next → Save → Start rollout**.
-5. Once your 14-day Closed Test (for personal accounts) completes, apply for **Production** access and roll out to Google Play!
+In **Play Console → Grow → Store presence → Main store listing**:
+1. **App Name:** `Melow Tic Tac Toe`
+2. **Short Description** (≤ 80 chars):
+   > Real-time emoji Tic-Tac-Toe with Blitz mode, cups, friend chat & voice calls!
+3. **Full Description:** Highlight 3×3–6×6 boards, 100+ emojis, Best-of-3/5 Melow Cups, Blitz 5s mode, Random Challenge Wheel, live Reactions/Taunts, 1-on-1 Friend Chat with photo sharing, and hands-free Voice Calls.
+4. **App Icon:** `512 × 512 px` PNG (`assets/images/melow_logo.png`).
+5. **Feature Graphic:** `1024 × 500 px` PNG/JPG banner.
+6. **Phone Screenshots:** Upload 4–8 screenshots from your phone (Home Dashboard, Live Match Board, Trophies Cabinet, Friends & Chat, Voice Call).
+
+---
+
+## Step 7: Fill Out Play Console App Content Declarations (Avoid Rejections!)
+
+In **Play Console → Policy and programmes → App content**, complete every checklist:
+
+1. **Privacy Policy:** Paste `https://minosh96.github.io/Tic-Tac-Toe/privacy.html`.
+2. **Data Safety:**
+   - **Does your app collect or share user data?** → **Yes** (collected, not shared with third parties).
+   - **Encrypted in transit?** → **Yes** (HTTPS/TLS & WebRTC DTLS-SRTP).
+   - **Data deletion link:** `https://minosh96.github.io/Tic-Tac-Toe/privacy.html#delete-data`.
+   - **Data types collected (App functionality only, optional/user-provided):**
+     - *App info & performance / Device or other IDs:* Anonymous Firebase User ID
+     - *Personal info:* Nickname
+     - *Photos and videos:* Optional profile photo & user-shared chat photos
+     - *Messages:* Temporary room chat & direct friend messages
+     - *Audio:* Ephemeral voice call audio (processed in real time, not permanently stored)
+3. **Foreground Service Permissions (`FOREGROUND_SERVICE_DATA_SYNC`):**
+   - Declare **Data Sync**: Explain that Melow Tic Tac Toe maintains an active real-time connection for incoming friend voice calls and instant chat messages while the phone is locked. Attach a short 15-second screen recording showing the app receiving an incoming call/message notification while locked/minimized.
+4. **Full-Screen Intent Permission (`USE_FULL_SCREEN_INTENT`):**
+   - Declare **Calling functionality**: Used exclusively to wake the lock screen and alert the user to an incoming peer-to-peer friend voice call (equivalent to VoIP calling apps).
+5. **Content Rating (IARC):**
+   - Complete the questionnaire; answer **Yes** to *Users interact* (chat & voice calls) and note built-in **Block Player** and **Report Player** moderation tools.
+6. **Target Audience & Content:**
+   - Select **13–15, 16–17, 18 and over** (avoids Families/COPPA restrictions due to free-form chat & voice calling).
+7. **App Access:**
+   - Select **All functionality is available without special access** (Firebase Anonymous Auth signs in automatically with zero login wall).
+
+---
+
+## Step 8: Upload `.aab`, Run Closed Test & Publish!
+
+1. In Play Console, go to **Test and release → Testing → Closed testing** (or **Internal testing** first to verify installation on your own phones!).
+2. Click **Create new release** → opt in to **Play App Signing** (recommended).
+3. Upload `build\app\outputs\bundle\release\app-release.aab`.
+4. Add release notes (e.g., *"Melow Tic Tac Toe v3.4.0 — Real-time multiplayer Tic-Tac-Toe with Blitz mode, Melow Cups, Friend Chat, photo sharing & live voice calls!"*).
+5. Click **Next → Save → Send changes for review**.
+6. Once your 12 testers opt in for 14 continuous days (required for new personal Play Console accounts), click **Apply for Production** and publish worldwide!
