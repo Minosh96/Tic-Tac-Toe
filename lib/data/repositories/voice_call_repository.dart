@@ -10,7 +10,8 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../../domain/models/social_models.dart';
 
 /// Peer-to-peer WebRTC Voice Call manager backed by Cloud Firestore signaling,
-/// native Android mic permissions, STUN+TURN NAT traversal, and buffered ICE exchange.
+/// native Android mic permissions, STUN+TURN NAT traversal, and properly ordered
+/// local + remote ICE candidate buffering.
 class VoiceCallRepository {
   VoiceCallRepository({
     FirebaseFirestore? firestore,
@@ -30,13 +31,15 @@ class VoiceCallRepository {
 
   static const MethodChannel _audioChannel = MethodChannel('melow/audio_call');
 
-  /// STUN + free public OpenRelay TURN servers so calls connect across 4G/5G NATs & Wi-Fi.
+  /// STUN + OpenRelay TURN servers (UDP 80/443 + TCP 443) for carrier NAT & Wi-Fi traversal.
   static const Map<String, dynamic> _rtcConfig = {
     'sdpSemantics': 'unified-plan',
     'iceCandidatePoolSize': 10,
     'iceServers': [
       {'urls': 'stun:stun.l.google.com:19302'},
       {'urls': 'stun:stun1.l.google.com:19302'},
+      {'urls': 'stun:stun2.l.google.com:19302'},
+      {'urls': 'stun:openrelay.metered.ca:80'},
       {
         'urls': 'turn:openrelay.metered.ca:80',
         'username': 'openrelayproject',
@@ -172,6 +175,14 @@ class VoiceCallRepository {
       }
     };
 
+    pc.onConnectionState = (RTCPeerConnectionState state) {
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        audioState.value = 'Connected';
+      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+        audioState.value = 'Audio connection failed';
+      }
+    };
+
     pc.onIceConnectionState = (RTCIceConnectionState state) {
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
@@ -179,7 +190,9 @@ class VoiceCallRepository {
           audioState.value = 'Connected';
           break;
         case RTCIceConnectionState.RTCIceConnectionStateChecking:
-          audioState.value = 'Connecting audio…';
+          if (audioState.value != 'Connected') {
+            audioState.value = 'Connecting audio…';
+          }
           break;
         case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
           audioState.value = 'Reconnecting…';
@@ -193,7 +206,9 @@ class VoiceCallRepository {
     };
   }
 
-  /// Creates an outgoing WebRTC audio call with buffered ICE candidate exchange.
+  /// Creates an outgoing WebRTC audio call.
+  /// CRITICAL: Buffers local ICE candidates until `calls/{callId}` is created in
+  /// Firestore so security rules (`exists(calls/{callId})`) never reject them!
   Future<ActiveVoiceCall> startVoiceCall({
     required String calleeUid,
     required String calleeName,
@@ -218,13 +233,28 @@ class VoiceCallRepository {
     final offerCandidates = callRef.collection('offerCandidates');
     final answerCandidates = callRef.collection('answerCandidates');
 
+    // Buffer local ICE candidates until parent `calls/{callId}` exists in Firestore!
+    bool callDocCreated = false;
+    final pendingLocalCandidates = <Map<String, dynamic>>[];
+
+    Future<void> writeLocalCandidate(Map<String, dynamic> payload) async {
+      try {
+        await offerCandidates.add(payload);
+      } catch (_) {}
+    }
+
     pc.onIceCandidate = (RTCIceCandidate candidate) {
       if (candidate.candidate == null || candidate.candidate!.isEmpty) return;
-      offerCandidates.add({
-        'candidate': candidate.candidate,
+      final payload = <String, dynamic>{
+        'candidate': candidate.candidate!,
         'sdpMid': candidate.sdpMid,
         'sdpMLineIndex': candidate.sdpMLineIndex,
-      });
+      };
+      if (callDocCreated) {
+        writeLocalCandidate(payload);
+      } else {
+        pendingLocalCandidates.add(payload);
+      }
     };
 
     final offer = await pc.createOffer({
@@ -233,6 +263,7 @@ class VoiceCallRepository {
     });
     await pc.setLocalDescription(offer);
 
+    // Create parent `calls/{callId}` FIRST before flushing any offerCandidates!
     await callRef.set({
       'callerUid': callerUid,
       'calleeUid': calleeUid,
@@ -246,9 +277,17 @@ class VoiceCallRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
+    callDocCreated = true;
+    final toFlush = List<Map<String, dynamic>>.from(pendingLocalCandidates);
+    pendingLocalCandidates.clear();
+    for (final payload in toFlush) {
+      await writeLocalCandidate(payload);
+    }
+
     final subs = <StreamSubscription<dynamic>>[];
     bool remoteSet = false;
     final pendingRemoteCandidates = <RTCIceCandidate>[];
+    final seenAnswerCandidateIds = <String>{};
 
     subs.add(
       callRef.snapshots().listen((snap) async {
@@ -257,7 +296,9 @@ class VoiceCallRepository {
         final answer = data['answer'];
         if (!remoteSet && answer is Map<String, dynamic>) {
           remoteSet = true;
-          audioState.value = 'Connecting audio…';
+          if (audioState.value != 'Connected') {
+            audioState.value = 'Connecting audio…';
+          }
           try {
             await pc.setRemoteDescription(
               RTCSessionDescription(
@@ -265,9 +306,10 @@ class VoiceCallRepository {
                 answer['type'] as String?,
               ),
             );
-            // Flush any ICE candidates that arrived before answer SDP!
             for (final cand in pendingRemoteCandidates) {
-              await pc.addCandidate(cand);
+              try {
+                await pc.addCandidate(cand);
+              } catch (_) {}
             }
             pendingRemoteCandidates.clear();
           } catch (_) {}
@@ -277,22 +319,21 @@ class VoiceCallRepository {
 
     subs.add(
       answerCandidates.snapshots().listen((snap) async {
-        for (final change in snap.docChanges) {
-          if (change.type == DocumentChangeType.added) {
-            final d = change.doc.data();
-            if (d != null && d['candidate'] is String) {
-              final cand = RTCIceCandidate(
-                d['candidate'] as String,
-                d['sdpMid'] as String?,
-                (d['sdpMLineIndex'] as num?)?.toInt(),
-              );
-              if (remoteSet) {
-                try {
-                  await pc.addCandidate(cand);
-                } catch (_) {}
-              } else {
-                pendingRemoteCandidates.add(cand);
-              }
+        for (final doc in snap.docs) {
+          if (!seenAnswerCandidateIds.add(doc.id)) continue;
+          final d = doc.data();
+          if (d['candidate'] is String && (d['candidate'] as String).isNotEmpty) {
+            final cand = RTCIceCandidate(
+              d['candidate'] as String,
+              d['sdpMid'] as String?,
+              (d['sdpMLineIndex'] as num?)?.toInt(),
+            );
+            if (remoteSet) {
+              try {
+                await pc.addCandidate(cand);
+              } catch (_) {}
+            } else {
+              pendingRemoteCandidates.add(cand);
             }
           }
         }
@@ -320,7 +361,7 @@ class VoiceCallRepository {
     );
   }
 
-  /// Answers an incoming ringing voice call with buffered ICE candidate exchange.
+  /// Answers an incoming ringing voice call with properly ordered SDP + ICE exchange.
   Future<ActiveVoiceCall> answerVoiceCall(VoiceCallSession session) async {
     final offer = session.offer;
     if (offer == null) {
@@ -343,13 +384,27 @@ class VoiceCallRepository {
     final offerCandidates = callRef.collection('offerCandidates');
     final answerCandidates = callRef.collection('answerCandidates');
 
+    bool answerPublished = false;
+    final pendingLocalCandidates = <Map<String, dynamic>>[];
+
+    Future<void> writeLocalCandidate(Map<String, dynamic> payload) async {
+      try {
+        await answerCandidates.add(payload);
+      } catch (_) {}
+    }
+
     pc.onIceCandidate = (RTCIceCandidate candidate) {
       if (candidate.candidate == null || candidate.candidate!.isEmpty) return;
-      answerCandidates.add({
-        'candidate': candidate.candidate,
+      final payload = <String, dynamic>{
+        'candidate': candidate.candidate!,
         'sdpMid': candidate.sdpMid,
         'sdpMLineIndex': candidate.sdpMLineIndex,
-      });
+      };
+      if (answerPublished) {
+        writeLocalCandidate(payload);
+      } else {
+        pendingLocalCandidates.add(payload);
+      }
     };
 
     await pc.setRemoteDescription(
@@ -370,23 +425,30 @@ class VoiceCallRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
+    answerPublished = true;
+    final toFlush = List<Map<String, dynamic>>.from(pendingLocalCandidates);
+    pendingLocalCandidates.clear();
+    for (final payload in toFlush) {
+      await writeLocalCandidate(payload);
+    }
+
+    final seenOfferCandidateIds = <String>{};
     final subs = <StreamSubscription<dynamic>>[];
     subs.add(
       offerCandidates.snapshots().listen((snap) async {
-        for (final change in snap.docChanges) {
-          if (change.type == DocumentChangeType.added) {
-            final d = change.doc.data();
-            if (d != null && d['candidate'] is String) {
-              try {
-                await pc.addCandidate(
-                  RTCIceCandidate(
-                    d['candidate'] as String,
-                    d['sdpMid'] as String?,
-                    (d['sdpMLineIndex'] as num?)?.toInt(),
-                  ),
-                );
-              } catch (_) {}
-            }
+        for (final doc in snap.docs) {
+          if (!seenOfferCandidateIds.add(doc.id)) continue;
+          final d = doc.data();
+          if (d['candidate'] is String && (d['candidate'] as String).isNotEmpty) {
+            try {
+              await pc.addCandidate(
+                RTCIceCandidate(
+                  d['candidate'] as String,
+                  d['sdpMid'] as String?,
+                  (d['sdpMLineIndex'] as num?)?.toInt(),
+                ),
+              );
+            } catch (_) {}
           }
         }
       }),
