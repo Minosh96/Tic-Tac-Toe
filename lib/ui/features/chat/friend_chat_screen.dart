@@ -7,10 +7,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/services/app_services.dart';
 import '../../../core/services/image_helper.dart';
 import '../../../domain/models/social_models.dart';
-import '../../core/widgets/melow_avatar.dart';
+import '../../core/widgets/live_user_avatar.dart';
 import 'voice_call_screen.dart';
 
-/// Direct 1-on-1 Friend Chat screen supporting text, image sharing & voice calls.
+/// Direct 1-on-1 Friend Chat supporting text, image sharing, live peer profile
+/// photo in AppBar, voice calls, and in-chat call log cards.
 class FriendChatScreen extends StatefulWidget {
   const FriendChatScreen({
     super.key,
@@ -208,10 +209,13 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            MelowAvatar(
-              avatarId: widget.friendAvatar,
-              photoBase64: widget.friendPhotoBase64,
-              size: 36,
+            // LiveUserAvatar immediately displays friend's custom gallery profile photo!
+            LiveUserAvatar(
+              services: widget.services,
+              uid: widget.friendUid,
+              fallbackAvatarId: widget.friendAvatar,
+              fallbackPhotoBase64: widget.friendPhotoBase64,
+              size: 38,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -280,6 +284,80 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
                           itemBuilder: (context, idx) {
                             final msg = items[idx];
                             final isMe = msg.senderUid == myUid;
+
+                            // Dedicated Call Log card right inside the chat timeline!
+                            if (msg.isCallLog) {
+                              final isMissedOrDeclined =
+                                  msg.text.toLowerCase().contains('missed') ||
+                                      msg.text.toLowerCase().contains('declined');
+                              return Center(
+                                child: Container(
+                                  margin:
+                                      const EdgeInsets.symmetric(vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: scheme.surfaceContainerHighest
+                                        .withValues(alpha: 0.8),
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: isMissedOrDeclined
+                                          ? scheme.error.withValues(alpha: 0.4)
+                                          : scheme.primary
+                                              .withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isMissedOrDeclined
+                                            ? Icons.call_missed_rounded
+                                            : Icons.call_rounded,
+                                        size: 16,
+                                        color: isMissedOrDeclined
+                                            ? scheme.error
+                                            : Colors.green,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          '${isMe ? 'Outgoing' : 'Incoming'} • ${msg.text.replaceFirst('📞 ', '')}',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _formatTime(msg.createdAt),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: _startVoiceCall,
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(4),
+                                          child: Icon(
+                                            Icons.call_outlined,
+                                            size: 16,
+                                            color: scheme.primary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
+
                             Uint8List? imgBytes;
                             if (msg.hasImage) {
                               try {

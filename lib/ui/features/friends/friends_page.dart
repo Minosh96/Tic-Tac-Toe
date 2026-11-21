@@ -6,6 +6,7 @@ import '../../../domain/game_engine.dart';
 import '../../../domain/models/social_models.dart';
 import '../../../domain/models/user_profile.dart';
 import '../../core/widgets/footer.dart';
+import '../../core/widgets/live_user_avatar.dart';
 import '../../core/widgets/melow_avatar.dart';
 import '../chat/friend_chat_screen.dart';
 import '../chat/voice_call_screen.dart';
@@ -717,9 +718,11 @@ class _FriendsPageState extends State<FriendsPage> {
                                       children: [
                                         Row(
                                           children: [
-                                            MelowAvatar(
-                                              avatarId: f.avatarId,
-                                              photoBase64: f.photoBase64,
+                                            LiveUserAvatar(
+                                              services: widget.services,
+                                              uid: f.friendUid,
+                                              fallbackAvatarId: f.avatarId,
+                                              fallbackPhotoBase64: f.photoBase64,
                                               size: 46,
                                             ),
                                             const SizedBox(width: 12),

@@ -10,6 +10,7 @@ import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/emoji_picker_grid.dart';
 import '../../core/widgets/footer.dart';
+import '../../core/widgets/live_user_avatar.dart';
 import '../../core/widgets/melow_avatar.dart';
 import '../../core/widgets/melow_logo.dart';
 import '../chat/friend_chat_screen.dart';
@@ -817,9 +818,12 @@ class _HomePageState extends State<HomePage> {
                                                 mainAxisAlignment:
                                                     MainAxisAlignment.center,
                                                 children: [
-                                                  MelowAvatar(
-                                                    avatarId: f.avatarId,
-                                                    photoBase64: f.photoBase64,
+                                                  LiveUserAvatar(
+                                                    services: widget.services,
+                                                    uid: f.friendUid,
+                                                    fallbackAvatarId: f.avatarId,
+                                                    fallbackPhotoBase64:
+                                                        f.photoBase64,
                                                     size: 46,
                                                   ),
                                                   const SizedBox(height: 6),

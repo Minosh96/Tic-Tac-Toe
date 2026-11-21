@@ -198,6 +198,7 @@ class DirectChatMessage {
     required this.senderName,
     required this.text,
     this.imageBase64,
+    this.msgType = 'text',
     this.createdAt,
   });
 
@@ -206,9 +207,11 @@ class DirectChatMessage {
   final String senderName;
   final String text;
   final String? imageBase64;
+  final String msgType; // 'text' | 'image' | 'call'
   final DateTime? createdAt;
 
   bool get hasImage => imageBase64 != null && imageBase64!.isNotEmpty;
+  bool get isCallLog => msgType == 'call' || text.startsWith('📞');
 
   factory DirectChatMessage.fromFirestore(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -220,6 +223,7 @@ class DirectChatMessage {
       senderName: data['senderName'] as String? ?? 'Player',
       text: data['text'] as String? ?? '',
       imageBase64: data['imageBase64'] as String?,
+      msgType: data['msgType'] as String? ?? 'text',
       createdAt: data['createdAt'] is Timestamp
           ? (data['createdAt'] as Timestamp).toDate()
           : null,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:melow_tic_tac_toe/domain/game_engine.dart';
 import 'package:melow_tic_tac_toe/domain/models/game_room.dart';
+import 'package:melow_tic_tac_toe/domain/models/social_models.dart';
 import 'package:melow_tic_tac_toe/ui/core/app_theme.dart';
 import 'package:melow_tic_tac_toe/ui/core/widgets/emoji_picker_grid.dart';
 import 'package:melow_tic_tac_toe/ui/features/about/about_screen.dart';
@@ -214,14 +215,40 @@ void main() {
     expect(titleSize.height, lessThan(40));
   });
 
-  testWidgets('AboutScreen shows v3.0 branding and Melow Labs credit', (
+  test('DirectChatMessage identifies call logs via msgType or prefix', () {
+    const callLog = DirectChatMessage(
+      id: 'm1',
+      senderUid: 'u1',
+      senderName: 'Minosh',
+      text: '📞 Voice call • 01:24',
+      msgType: 'call',
+    );
+    const legacyCallLog = DirectChatMessage(
+      id: 'm2',
+      senderUid: 'u1',
+      senderName: 'Minosh',
+      text: '📞 Missed voice call',
+    );
+    const regularMsg = DirectChatMessage(
+      id: 'm3',
+      senderUid: 'u1',
+      senderName: 'Minosh',
+      text: 'Ready for a rematch?',
+    );
+
+    expect(callLog.isCallLog, isTrue);
+    expect(legacyCallLog.isCallLog, isTrue);
+    expect(regularMsg.isCallLog, isFalse);
+  });
+
+  testWidgets('AboutScreen shows v3.1 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 3.0.3 (Build 6)'), findsOneWidget);
+    expect(find.text('Version 3.1.0 (Build 7)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,

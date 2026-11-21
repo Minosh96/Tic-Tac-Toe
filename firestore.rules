@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ===============================================================
-// Assumed Data Model — Melow Tic Tac Toe v3.0
+// Assumed Data Model — Melow Tic Tac Toe v3.1
 // ===============================================================
 //
 // Collection: rooms/{roomId}
@@ -204,6 +204,7 @@ rules_version = '2';
 //   - senderName: string (optional, nullable, 0..20)
 //   - text: string (optional, nullable, 0..500; required non-empty if imageBase64 absent/empty)
 //   - imageBase64: string (optional, nullable, 0..320000; required non-empty if text absent/empty)
+//   - msgType: string (optional, nullable, 'text' | 'image' | 'call')
 //   - createdAt: timestamp (required, == request.time)
 //
 // Collection: calls/{callId} (WebRTC P2P voice call signaling)
@@ -227,6 +228,16 @@ rules_version = '2';
 //   - sdpMid: string (optional, nullable, 0..64)
 //   - sdpMLineIndex: int (optional, nullable, 0..64)
 //   - createdAt: timestamp (optional, nullable)
+//
+// Subcollection: calls/{callId}/audioChunks/{chunkId} (Relay Voice Mode fallback)
+// Fields:
+//   - senderUid: string (required, == auth.uid)
+//   - audioBase64: string (required, 1..350000)
+//   - durationMs: int (required, 0..60000)
+//   - createdAt: timestamp (required, == request.time)
+//
+// Collection: config/{docId} (Read-only runtime app config; only docId == 'rtc' readable)
+//   - Admin-managed dynamic TURN iceServers config; client list/write denied.
 //
 // ===============================================================
 
@@ -787,12 +798,13 @@ service cloud.firestore {
     }
 
     function isValidDirectMessage(d) {
-      return d.keys().hasOnly(['senderUid', 'senderName', 'text', 'imageBase64', 'createdAt']) &&
+      return d.keys().hasOnly(['senderUid', 'senderName', 'text', 'imageBase64', 'msgType', 'createdAt']) &&
         d.keys().hasAll(['senderUid', 'createdAt']) &&
         d.senderUid == request.auth.uid &&
         isOptionalNullableString(d, 'senderName', 0, 20) &&
         isOptionalNullableString(d, 'text', 0, 500) &&
         isOptionalNullableString(d, 'imageBase64', 0, 320000) &&
+        (!('msgType' in d) || d.msgType == null || d.msgType in ['text', 'image', 'call']) &&
         (
           ('text' in d && d.text is string && d.text.size() > 0) ||
           ('imageBase64' in d && d.imageBase64 is string && d.imageBase64.size() > 0)
@@ -833,6 +845,15 @@ service cloud.firestore {
         isOptionalNullableString(d, 'sdpMid', 0, 64) &&
         (!('sdpMLineIndex' in d) || d.sdpMLineIndex == null || isNonNegInt(d.sdpMLineIndex, 64)) &&
         isOptionalNullableTimestamp(d, 'createdAt');
+    }
+
+    function isValidAudioChunk(d) {
+      return d.keys().hasOnly(['senderUid', 'audioBase64', 'durationMs', 'createdAt']) &&
+        d.keys().hasAll(['senderUid', 'audioBase64', 'durationMs', 'createdAt']) &&
+        d.senderUid == request.auth.uid &&
+        isStringLen(d.audioBase64, 1, 350000) &&
+        isNonNegInt(d.durationMs, 60000) &&
+        d.createdAt == request.time;
     }
 
     // ===============================================================
@@ -1303,6 +1324,22 @@ service cloud.firestore {
           isValidIceCandidate(request.resource.data);
         allow update, delete: if false;
       }
+
+      match /audioChunks/{chunkId} {
+        allow read: if callExistsAndParticipant(callId);
+        allow create: if callExistsAndParticipant(callId) &&
+          isValidAudioChunk(request.resource.data);
+        allow update, delete: if false;
+      }
+    }
+
+    // ===============================================================
+    // 15. Read-Only Runtime Config (Dynamic TURN / RTC ICE Servers)
+    // ===============================================================
+
+    match /config/{docId} {
+      allow get: if signedIn() && docId == 'rtc';
+      allow list, write: if false;
     }
 
     // ===============================================================

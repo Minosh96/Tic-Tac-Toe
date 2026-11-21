@@ -108,6 +108,7 @@ class ChatRepository {
     required String senderName,
     String text = '',
     String? imageBase64,
+    String? msgType,
   }) async {
     final trimmed = text.trim();
     final hasImage = imageBase64 != null && imageBase64.isNotEmpty;
@@ -120,6 +121,7 @@ class ChatRepository {
     final chatId = await ensureChatThread(friendUid);
     final chatRef = _chatRef(chatId);
 
+    final effectiveType = msgType ?? (hasImage ? 'image' : 'text');
     final preview =
         trimmed.isNotEmpty ? trimmed : '📷 Shared an image';
 
@@ -129,6 +131,7 @@ class ChatRepository {
       'senderName': senderName,
       'text': trimmed,
       if (hasImage) 'imageBase64': imageBase64,
+      'msgType': effectiveType,
       'createdAt': FieldValue.serverTimestamp(),
     });
     batch.update(chatRef, {
@@ -139,5 +142,21 @@ class ChatRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
     await batch.commit();
+  }
+
+  /// Writes a structured voice call log entry directly into the 1-on-1 friend chat.
+  Future<void> logCallInChat({
+    required String friendUid,
+    required String senderName,
+    required String summary,
+  }) async {
+    try {
+      await sendMessage(
+        friendUid: friendUid,
+        senderName: senderName,
+        text: summary,
+        msgType: 'call',
+      );
+    } catch (_) {}
   }
 }

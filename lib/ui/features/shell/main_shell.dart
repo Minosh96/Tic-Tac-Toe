@@ -4,7 +4,7 @@ import '../../../core/services/app_services.dart';
 import '../../../core/services/sound_service.dart';
 import '../../../domain/models/social_models.dart';
 import '../../core/app_theme.dart';
-import '../../core/widgets/melow_avatar.dart';
+import '../../core/widgets/live_user_avatar.dart';
 import '../chat/voice_call_screen.dart';
 import '../friends/friends_page.dart';
 import '../home/home_page.dart';
@@ -75,8 +75,10 @@ class _MainShellState extends State<MainShell> {
                       ),
                       child: Row(
                         children: [
-                          MelowAvatar(
-                            avatarId: incoming.callerAvatar,
+                          LiveUserAvatar(
+                            services: widget.services,
+                            uid: incoming.callerUid,
+                            fallbackAvatarId: incoming.callerAvatar,
                             size: 40,
                           ),
                           const SizedBox(width: 10),
