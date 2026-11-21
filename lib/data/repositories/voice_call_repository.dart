@@ -9,13 +9,14 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../domain/models/social_models.dart';
 
-enum VoiceTransportMode { connecting, webrtcLive, relayLive }
+enum VoiceTransportMode { connecting, webrtcLive, fullDuplexRelay }
 
-/// Hybrid Voice Call Manager:
-/// 1. Tries direct P2P WebRTC first (with verified fast STUN + optional Firestore `config/rtc` TURN).
-/// 2. If carrier CGNAT / symmetric NAT blocks direct P2P, seamlessly upgrades the active call
-///    to **Live Relay Mode** (compressed AAC voice clips streamed over Cloud Firestore HTTPS/443
-///    with automatic playback on the receiver) so players can ALWAYS hear each other on every network!
+/// Real-Time Hands-Free WhatsApp-Style Voice Call Manager:
+/// 1. Tries direct P2P WebRTC first (verified fast STUN + optional Firestore `config/rtc` TURN).
+/// 2. If mobile carrier CGNAT / symmetric NAT blocks direct P2P within 4 seconds,
+///    automatically switches to our native **Full-Duplex Hands-Free Voice Stream**
+///    (`AudioRecord` + Hardware AEC/NS/AGC + ITU-T G.711 u-law + continuous `AudioTrack`)
+///    over Cloud Firestore HTTPS/443 — ZERO buttons to press, talk naturally like WhatsApp!
 class VoiceCallRepository {
   VoiceCallRepository({
     FirebaseFirestore? firestore,
@@ -153,7 +154,7 @@ class VoiceCallRepository {
     }
   }
 
-  /// Creates an outgoing hybrid WebRTC + Live Relay voice call.
+  /// Creates an outgoing hands-free real-time voice call.
   Future<ActiveVoiceCall> startVoiceCall({
     required String calleeUid,
     required String calleeName,
@@ -274,7 +275,7 @@ class VoiceCallRepository {
             }
             pendingRemoteCandidates.clear();
           } catch (_) {
-            await activeCall.switchToRelayMode();
+            await activeCall.switchToFullDuplexRelay();
           }
         }
       }),
@@ -307,7 +308,7 @@ class VoiceCallRepository {
     return activeCall;
   }
 
-  /// Answers an incoming hybrid WebRTC + Live Relay voice call.
+  /// Answers an incoming hands-free real-time voice call.
   Future<ActiveVoiceCall> answerVoiceCall(VoiceCallSession session) async {
     final offer = session.offer;
     if (offer == null) {
@@ -438,8 +439,8 @@ class VoiceCallRepository {
   }
 }
 
-/// Active hybrid voice call handle supporting full-duplex WebRTC AND automatic
-/// carrier-proof Live Relay Voice Mode (auto-playing AAC voice clips via Firestore).
+/// Active hands-free real-time voice call handle (P2P WebRTC + automatic
+/// native Full-Duplex Hands-Free Relay with zero buttons to press).
 class ActiveVoiceCall {
   ActiveVoiceCall._({
     required this.callId,
@@ -455,7 +456,7 @@ class ActiveVoiceCall {
         transportMode = ValueNotifier<VoiceTransportMode>(
           VoiceTransportMode.connecting,
         ),
-        isTalking = ValueNotifier<bool>(false),
+        mySpeaking = ValueNotifier<bool>(false),
         peerSpeaking = ValueNotifier<bool>(false);
 
   static const MethodChannel _audioChannel = MethodChannel('melow/audio_call');
@@ -467,7 +468,7 @@ class ActiveVoiceCall {
   final RTCVideoRenderer remoteRenderer;
   final ValueNotifier<String> audioState;
   final ValueNotifier<VoiceTransportMode> transportMode;
-  final ValueNotifier<bool> isTalking;
+  final ValueNotifier<bool> mySpeaking;
   final ValueNotifier<bool> peerSpeaking;
   final Future<void> Function() onEndRemote;
   final Future<void> Function() onRestoreAudio;
@@ -477,7 +478,6 @@ class ActiveVoiceCall {
   final List<StreamSubscription<dynamic>> _subs = [];
   Timer? _iceFallbackTimer;
   Timer? _peerSpeakingTimer;
-  DateTime? _talkStartedAt;
   final Set<String> _playedChunkIds = <String>{};
 
   bool _muted = false;
@@ -517,18 +517,20 @@ class ActiveVoiceCall {
     };
 
     pc.onConnectionState = (RTCPeerConnectionState state) {
-      if (_disposed || transportMode.value == VoiceTransportMode.relayLive) {
+      if (_disposed ||
+          transportMode.value == VoiceTransportMode.fullDuplexRelay) {
         return;
       }
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         _markWebRtcConnected();
       } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
-        switchToRelayMode();
+        switchToFullDuplexRelay();
       }
     };
 
     pc.onIceConnectionState = (RTCIceConnectionState state) {
-      if (_disposed || transportMode.value == VoiceTransportMode.relayLive) {
+      if (_disposed ||
+          transportMode.value == VoiceTransportMode.fullDuplexRelay) {
         return;
       }
       switch (state) {
@@ -541,7 +543,7 @@ class ActiveVoiceCall {
           break;
         case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
         case RTCIceConnectionState.RTCIceConnectionStateFailed:
-          switchToRelayMode();
+          switchToFullDuplexRelay();
           break;
         default:
           break;
@@ -550,40 +552,41 @@ class ActiveVoiceCall {
   }
 
   void _markWebRtcConnected() {
-    if (_disposed) return;
+    if (_disposed || _switchingToRelay) return;
     _iceFallbackTimer?.cancel();
     _everConnected = true;
     transportMode.value = VoiceTransportMode.webrtcLive;
     audioState.value = 'Connected';
   }
 
-  /// Starts a 6-second watchdog once callee answers: if carrier CGNAT prevents
-  /// direct P2P WebRTC, seamlessly switches to Live Relay Voice Mode!
+  /// 4-second watchdog after peer answers: if carrier CGNAT prevents direct
+  /// P2P WebRTC, silently upgrades to hands-free Full-Duplex Voice Streaming!
   void _onPeerAnswered() {
     if (_disposed) return;
     if (transportMode.value == VoiceTransportMode.connecting) {
       audioState.value = 'Connecting audio…';
     }
     _iceFallbackTimer?.cancel();
-    _iceFallbackTimer = Timer(const Duration(seconds: 6), () {
+    _iceFallbackTimer = Timer(const Duration(seconds: 4), () {
       if (!_disposed && transportMode.value == VoiceTransportMode.connecting) {
-        switchToRelayMode();
+        switchToFullDuplexRelay();
       }
     });
   }
 
-  /// Switches the active call into Live Relay Voice Mode (works over HTTPS/443 on all carriers).
-  Future<void> switchToRelayMode() async {
+  /// Seamlessly switches to hands-free Full-Duplex real-time audio streaming
+  /// (works on every mobile carrier with zero buttons to press).
+  Future<void> switchToFullDuplexRelay() async {
     if (_disposed ||
         _switchingToRelay ||
-        transportMode.value == VoiceTransportMode.relayLive) {
+        transportMode.value == VoiceTransportMode.fullDuplexRelay) {
       return;
     }
     _switchingToRelay = true;
     _iceFallbackTimer?.cancel();
     _everConnected = true;
 
-    // Release WebRTC mic stream so Android MediaRecorder has exclusive clean mic access.
+    // Release WebRTC mic stream so Android AudioRecord + Hardware AEC gets clean mic access.
     try {
       final stream = localStream;
       localStream = null;
@@ -598,11 +601,48 @@ class ActiveVoiceCall {
     } catch (_) {}
 
     if (_disposed) return;
-    transportMode.value = VoiceTransportMode.relayLive;
-    audioState.value = 'Connected (Live Relay)';
+
+    // Register native callback handler for continuous hands-free speech frames.
+    _audioChannel.setMethodCallHandler(_handleNativeAudioCallback);
+
+    try {
+      await _audioChannel.invokeMethod('startFullDuplexRelay', {
+        'speaker': _speakerOn,
+        'muted': _muted,
+      });
+    } catch (_) {}
+
+    if (_disposed) return;
+    transportMode.value = VoiceTransportMode.fullDuplexRelay;
+    audioState.value = 'Connected';
   }
 
-  /// Listens for incoming relay voice clips from the other player & plays them immediately.
+  Future<dynamic> _handleNativeAudioCallback(MethodCall call) async {
+    if (_disposed) return;
+    if (call.method == 'onFullDuplexFrame') {
+      final args = call.arguments;
+      if (args is Map) {
+        final b64 = args['audioBase64'] as String?;
+        final durMs = (args['durationMs'] as num?)?.toInt() ?? 320;
+        if (b64 != null && b64.isNotEmpty && b64.length <= 340000) {
+          // Fire-and-forget upload so capture thread stays completely real-time.
+          callRef.collection('audioChunks').add({
+            'senderUid': myUid,
+            'audioBase64': b64,
+            'durationMs': durMs.clamp(20, 60000),
+            'createdAt': FieldValue.serverTimestamp(),
+          }).catchError((_) => callRef);
+        }
+      }
+    } else if (call.method == 'onLocalSpeaking') {
+      final speaking = call.arguments == true;
+      if (!_disposed && mySpeaking.value != speaking) {
+        mySpeaking.value = speaking;
+      }
+    }
+  }
+
+  /// Streams incoming speech frames from the peer & plays them immediately via AudioTrack.
   void _startRelayChunkListener() {
     _addSub(
       callRef
@@ -610,27 +650,36 @@ class ActiveVoiceCall {
           .orderBy('createdAt', descending: false)
           .snapshots()
           .listen((snap) async {
+        final now = DateTime.now();
         for (final doc in snap.docs) {
           if (!_playedChunkIds.add(doc.id)) continue;
           final d = doc.data();
           if (d['senderUid'] == myUid) continue;
           final b64 = d['audioBase64'] as String?;
           if (b64 == null || b64.isEmpty) continue;
-          // Auto-switch receiver to Relay Mode if peer already started sending relay audio!
-          if (transportMode.value != VoiceTransportMode.relayLive) {
-            await switchToRelayMode();
+
+          // Ignore very stale frames (> 6s old) so reconnecting never replays old audio.
+          final ts = d['createdAt'];
+          if (ts is Timestamp && now.difference(ts.toDate()).inSeconds > 6) {
+            continue;
+          }
+
+          // Auto-switch receiver to hands-free Full-Duplex if peer switched first!
+          if (transportMode.value != VoiceTransportMode.fullDuplexRelay) {
+            await switchToFullDuplexRelay();
           }
           if (_disposed) return;
+
           peerSpeaking.value = true;
           _peerSpeakingTimer?.cancel();
-          final durMs = ((d['durationMs'] as num?)?.toInt() ?? 2000).clamp(800, 30000);
-          _peerSpeakingTimer = Timer(Duration(milliseconds: durMs + 400), () {
+          final durMs = ((d['durationMs'] as num?)?.toInt() ?? 320).clamp(200, 5000);
+          _peerSpeakingTimer = Timer(Duration(milliseconds: durMs + 350), () {
             if (!_disposed) peerSpeaking.value = false;
           });
+
           try {
-            await _audioChannel.invokeMethod('playRelayAudio', {
+            await _audioChannel.invokeMethod('playFullDuplexFrame', {
               'audioBase64': b64,
-              'speaker': _speakerOn,
             });
           } catch (_) {}
         }
@@ -638,47 +687,21 @@ class ActiveVoiceCall {
     );
   }
 
-  /// Begins recording a live relay voice clip (used in Live Relay Mode).
-  Future<void> startRelayTalk() async {
-    if (_disposed || _muted || isTalking.value) return;
-    if (transportMode.value != VoiceTransportMode.relayLive) {
-      await switchToRelayMode();
-    }
-    try {
-      await _audioChannel.invokeMethod('startRelayRecording');
-      _talkStartedAt = DateTime.now();
-      isTalking.value = true;
-    } catch (_) {}
-  }
-
-  /// Stops recording & immediately sends the compressed voice clip to your friend.
-  Future<void> stopAndSendRelayTalk() async {
-    if (_disposed || !isTalking.value) return;
-    isTalking.value = false;
-    final durMs = _talkStartedAt == null
-        ? 1000
-        : DateTime.now().difference(_talkStartedAt!).inMilliseconds.clamp(300, 55000);
-    _talkStartedAt = null;
-    try {
-      final b64 =
-          await _audioChannel.invokeMethod<String>('stopRelayRecording');
-      if (b64 == null || b64.isEmpty || b64.length > 340000) return;
-      await callRef.collection('audioChunks').add({
-        'senderUid': myUid,
-        'audioBase64': b64,
-        'durationMs': durMs,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } catch (_) {}
-  }
-
   void setMuted(bool value) {
     _muted = value;
+    if (value && !_disposed) {
+      mySpeaking.value = false;
+    }
     final stream = localStream;
     if (stream != null) {
       for (final track in stream.getAudioTracks()) {
         track.enabled = !value;
       }
+    }
+    if (transportMode.value == VoiceTransportMode.fullDuplexRelay) {
+      _audioChannel
+          .invokeMethod('setFullDuplexMuted', {'muted': value})
+          .catchError((_) {});
     }
   }
 
@@ -692,9 +715,13 @@ class ActiveVoiceCall {
     _disposed = true;
     _iceFallbackTimer?.cancel();
     _peerSpeakingTimer?.cancel();
+    _audioChannel.setMethodCallHandler(null);
     for (final sub in _subs) {
       await sub.cancel();
     }
+    try {
+      await _audioChannel.invokeMethod('stopFullDuplexRelay');
+    } catch (_) {}
     if (notifyRemote) {
       await onEndRemote();
     }
@@ -717,7 +744,7 @@ class ActiveVoiceCall {
     } catch (_) {}
     audioState.dispose();
     transportMode.dispose();
-    isTalking.dispose();
+    mySpeaking.dispose();
     peerSpeaking.dispose();
   }
 }

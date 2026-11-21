@@ -9,8 +9,9 @@ import '../../../domain/models/social_models.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/live_user_avatar.dart';
 
-/// Hybrid WebRTC + Carrier-Proof Live Relay Voice Call screen.
-/// Automatically displays the peer's live gallery photo and logs the call into Friend Chat.
+/// Hands-Free Real-Time WhatsApp-Style Voice Call Screen.
+/// Automatically uses direct P2P WebRTC or native Full-Duplex Hands-Free Relay
+/// with zero buttons to hold or tap — just talk naturally!
 class VoiceCallScreen extends StatefulWidget {
   const VoiceCallScreen.outgoing({
     super.key,
@@ -88,7 +89,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
           roomId: widget._roomId,
         );
       } else {
-        setState(() => _statusText = 'Joining voice call…');
+        setState(() => _statusText = 'Connecting audio…');
         call = await widget.services.voiceCall
             .answerVoiceCall(widget._incomingSession!);
       }
@@ -131,7 +132,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     final nextStatus = call.audioState.value;
     final nextMode = call.transportMode.value;
     if ((nextMode == VoiceTransportMode.webrtcLive ||
-            nextMode == VoiceTransportMode.relayLive) &&
+            nextMode == VoiceTransportMode.fullDuplexRelay) &&
         _durationTimer == null) {
       _startTimer();
     }
@@ -210,15 +211,14 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   Widget build(BuildContext context) {
     final call = _activeCall;
     final isConnected = _mode == VoiceTransportMode.webrtcLive ||
-        _mode == VoiceTransportMode.relayLive;
-    final isRelay = _mode == VoiceTransportMode.relayLive;
+        _mode == VoiceTransportMode.fullDuplexRelay;
 
     return Scaffold(
       backgroundColor: AppTheme.darkBackground,
       body: SafeArea(
         child: Stack(
           children: [
-            if (call != null && _mode != VoiceTransportMode.relayLive)
+            if (call != null && _mode != VoiceTransportMode.fullDuplexRelay)
               Positioned(
                 left: 0,
                 top: 0,
@@ -234,9 +234,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 14),
-                  Text(
-                    isRelay ? '🎙️ Melow Live Voice Relay' : '🎙️ Melow Voice Call',
-                    style: const TextStyle(
+                  const Text(
+                    '🎙️ Melow Voice Call',
+                    style: TextStyle(
                       color: AppTheme.cyanAccent,
                       fontWeight: FontWeight.w800,
                       fontSize: 15,
@@ -244,135 +244,118 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                     ),
                   ),
                   const Spacer(),
-                  LiveUserAvatar(
-                    services: widget.services,
-                    uid: widget._peerUid,
-                    fallbackAvatarId: widget._peerAvatar,
-                    size: 112,
-                    borderColor: isConnected
-                        ? Colors.greenAccent
-                        : AppTheme.purpleAccent,
-                  ),
-                  const SizedBox(height: 18),
+                  if (call != null)
+                    ValueListenableBuilder<bool>(
+                      valueListenable: call.peerSpeaking,
+                      builder: (context, peerTalking, _) => AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        padding: EdgeInsets.all(peerTalking ? 10 : 4),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: (peerTalking
+                                      ? Colors.greenAccent
+                                      : isConnected
+                                          ? AppTheme.cyanAccent
+                                          : AppTheme.purpleAccent)
+                                  .withValues(alpha: peerTalking ? 0.6 : 0.25),
+                              blurRadius: peerTalking ? 34 : 16,
+                              spreadRadius: peerTalking ? 6 : 1,
+                            ),
+                          ],
+                        ),
+                        child: LiveUserAvatar(
+                          services: widget.services,
+                          uid: widget._peerUid,
+                          fallbackAvatarId: widget._peerAvatar,
+                          size: 122,
+                          borderColor: peerTalking
+                              ? Colors.greenAccent
+                              : isConnected
+                                  ? AppTheme.cyanAccent
+                                  : AppTheme.purpleAccent,
+                        ),
+                      ),
+                    )
+                  else
+                    LiveUserAvatar(
+                      services: widget.services,
+                      uid: widget._peerUid,
+                      fallbackAvatarId: widget._peerAvatar,
+                      size: 122,
+                      borderColor: AppTheme.purpleAccent,
+                    ),
+                  const SizedBox(height: 20),
                   Text(
                     widget._peerName,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 26,
+                      fontSize: 27,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     isConnected
-                        ? '${isRelay ? 'Live Relay' : 'Live Audio'} • ${_formatDuration(_elapsedSeconds)}'
+                        ? _formatDuration(_elapsedSeconds)
                         : _statusText,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: isConnected
                           ? Colors.greenAccent
                           : Colors.white.withValues(alpha: 0.82),
-                      fontSize: 15,
+                      fontSize: isConnected ? 18 : 15,
                       fontWeight: FontWeight.w700,
+                      letterSpacing: isConnected ? 1.2 : 0,
                     ),
                   ),
-                  if (call != null && isRelay) ...[
-                    const SizedBox(height: 12),
+                  if (call != null && isConnected) ...[
+                    const SizedBox(height: 14),
                     ValueListenableBuilder<bool>(
                       valueListenable: call.peerSpeaking,
-                      builder: (context, speaking, _) => AnimatedOpacity(
-                        opacity: speaking ? 1.0 : 0.65,
-                        duration: const Duration(milliseconds: 200),
-                        child: Text(
-                          speaking
-                              ? '🔊 ${widget._peerName} is speaking…'
-                              : 'Hold the mic button below to talk (auto-plays on friend’s phone)',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    ValueListenableBuilder<bool>(
-                      valueListenable: call.isTalking,
-                      builder: (context, talking, _) {
-                        return GestureDetector(
-                          onLongPressStart: (_) => call.startRelayTalk(),
-                          onLongPressEnd: (_) => call.stopAndSendRelayTalk(),
-                          onTap: () {
-                            if (talking) {
-                              call.stopAndSendRelayTalk();
+                      builder: (context, peerTalking, _) {
+                        return ValueListenableBuilder<bool>(
+                          valueListenable: call.mySpeaking,
+                          builder: (context, iAmTalking, _) {
+                            final String cue;
+                            final Color cueColor;
+                            if (_muted) {
+                              cue = '🔇 Microphone muted';
+                              cueColor = Colors.orangeAccent;
+                            } else if (peerTalking) {
+                              cue = '🔊 ${widget._peerName} is speaking…';
+                              cueColor = Colors.greenAccent;
+                            } else if (iAmTalking) {
+                              cue = '🎙️ You are speaking…';
+                              cueColor = AppTheme.cyanAccent;
                             } else {
-                              call.startRelayTalk();
+                              cue = 'Connected • Speak freely';
+                              cueColor = Colors.white70;
                             }
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: talking ? 136 : 122,
-                            height: talking ? 136 : 122,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: talking
-                                    ? const [Colors.redAccent, Colors.orangeAccent]
-                                    : const [
-                                        AppTheme.purpleAccent,
-                                        AppTheme.cyanAccent,
-                                      ],
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (talking
-                                          ? Colors.redAccent
-                                          : AppTheme.cyanAccent)
-                                      .withValues(alpha: 0.55),
-                                  blurRadius: talking ? 30 : 18,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                cue,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: cueColor,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                              ],
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  talking
-                                      ? Icons.graphic_eq_rounded
-                                      : Icons.mic_rounded,
-                                  color: Colors.white,
-                                  size: 40,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  talking ? 'SENDING…' : 'HOLD / TAP\nTO TALK',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         );
                       },
-                    ),
-                  ] else if (call != null && !isConnected && !_ended) ...[
-                    const SizedBox(height: 18),
-                    TextButton.icon(
-                      onPressed: () => call.switchToRelayMode(),
-                      icon: const Icon(
-                        Icons.cell_tower_rounded,
-                        color: AppTheme.cyanAccent,
-                        size: 18,
-                      ),
-                      label: const Text(
-                        'Slow network? Switch to Live Relay',
-                        style: TextStyle(color: AppTheme.cyanAccent),
-                      ),
                     ),
                   ],
                   const Spacer(),
@@ -408,7 +391,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
@@ -448,8 +431,8 @@ class _CallControlButton extends StatelessWidget {
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: Container(
-            width: 64,
-            height: 64,
+            width: 66,
+            height: 66,
             decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
             child: Icon(icon, color: Colors.white, size: 28),
           ),

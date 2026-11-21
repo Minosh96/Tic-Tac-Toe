@@ -241,14 +241,14 @@ void main() {
     expect(regularMsg.isCallLog, isFalse);
   });
 
-  testWidgets('AboutScreen shows v3.1 branding and Melow Labs credit', (
+  testWidgets('AboutScreen shows v3.2 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 3.1.0 (Build 7)'), findsOneWidget);
+    expect(find.text('Version 3.2.0 (Build 8)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,

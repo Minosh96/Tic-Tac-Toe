@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/services/app_services.dart';
 import '../../../../domain/models/game_room.dart';
 import '../../../core/app_theme.dart';
+import '../../../core/widgets/live_user_avatar.dart';
 import '../../../core/widgets/melow_avatar.dart';
 
-/// Displays both players (avatar, nickname, emoji), mode/board pills, active turn & score pips.
+/// Displays both players (live gallery photo/avatar, nickname, emoji), mode/board pills, active turn & score pips.
 class ScoreboardCard extends StatelessWidget {
   const ScoreboardCard({
     super.key,
     required this.room,
     required this.currentUid,
+    this.services,
   });
 
   final GameRoom room;
   final String currentUid;
+  final AppServices? services;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +56,8 @@ class ScoreboardCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _PlayerColumn(
+                    services: services,
+                    uid: room.hostId,
                     name: room.hostName,
                     avatarId: room.hostAvatar,
                     emoji: room.hostEmoji,
@@ -97,6 +103,8 @@ class ScoreboardCard extends StatelessWidget {
                 ),
                 Expanded(
                   child: _PlayerColumn(
+                    services: services,
+                    uid: room.isLobby ? '' : room.guestId,
                     name: room.isLobby ? 'Waiting…' : room.guestName,
                     avatarId: room.isLobby ? 'bot' : room.guestAvatar,
                     emoji: room.isLobby ? '⏳' : room.guestEmoji,
@@ -163,6 +171,8 @@ class _InfoPill extends StatelessWidget {
 
 class _PlayerColumn extends StatelessWidget {
   const _PlayerColumn({
+    this.services,
+    required this.uid,
     required this.name,
     required this.avatarId,
     required this.emoji,
@@ -173,6 +183,8 @@ class _PlayerColumn extends StatelessWidget {
     required this.alignment,
   });
 
+  final AppServices? services;
+  final String uid;
   final String name;
   final String avatarId;
   final String emoji;
@@ -185,6 +197,14 @@ class _PlayerColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final avatarWidget = (services != null && uid.isNotEmpty)
+        ? LiveUserAvatar(
+            services: services!,
+            uid: uid,
+            fallbackAvatarId: avatarId,
+            size: 34,
+          )
+        : MelowAvatar(avatarId: avatarId, size: 34);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -208,7 +228,7 @@ class _PlayerColumn extends StatelessWidget {
                 Text(emoji, style: const TextStyle(fontSize: 20)),
                 const SizedBox(width: 5),
               ],
-              MelowAvatar(avatarId: avatarId, size: 32),
+              avatarWidget,
               if (alignment == CrossAxisAlignment.start) ...[
                 const SizedBox(width: 5),
                 Text(emoji, style: const TextStyle(fontSize: 20)),

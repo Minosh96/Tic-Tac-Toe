@@ -962,8 +962,11 @@ service cloud.firestore {
 
     match /users/{uid} {
       // Non-PII game profile only; private data lives in users/{uid}/private/{docId}.
-      allow get: if signedIn() &&
-        (request.auth.uid == uid || (resource != null && resource.data.publicProfileEnabled == true));
+      allow get: if signedIn() && (
+        request.auth.uid == uid ||
+        (resource != null && resource.data.publicProfileEnabled == true) ||
+        exists(/databases/$(database)/documents/users/$(uid)/friends/$(request.auth.uid))
+      );
       allow list: if false;
 
       allow create: if isOwner(uid) &&

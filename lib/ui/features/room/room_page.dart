@@ -459,7 +459,11 @@ class _RoomPageState extends State<RoomPage> {
                             child: ListView(
                               padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
                               children: [
-                                ScoreboardCard(room: room, currentUid: uid),
+                                ScoreboardCard(
+                                  room: room,
+                                  currentUid: uid,
+                                  services: widget.services,
+                                ),
                                 if (opponentLeft) ...[
                                   const SizedBox(height: 10),
                                   Container(
@@ -650,6 +654,7 @@ class _RoomPageState extends State<RoomPage> {
                                   RoomChatPanel(
                                     room: room,
                                     currentUid: uid,
+                                    services: widget.services,
                                     messagesStream: widget.services.game
                                         .watchMessages(widget.code),
                                   ),

@@ -215,7 +215,8 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
               uid: widget.friendUid,
               fallbackAvatarId: widget.friendAvatar,
               fallbackPhotoBase64: widget.friendPhotoBase64,
-              size: 38,
+              size: 40,
+              enableFullScreenPreview: true,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -364,66 +365,91 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
                                 imgBytes = base64Decode(msg.imageBase64!);
                               } catch (_) {}
                             }
-                            return Align(
-                              alignment: isMe
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: Container(
-                                constraints: BoxConstraints(
-                                  maxWidth:
-                                      MediaQuery.of(context).size.width * 0.76,
-                                ),
-                                margin: const EdgeInsets.symmetric(vertical: 4),
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: isMe
-                                      ? scheme.primaryContainer
-                                      : scheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.only(
-                                    topLeft: const Radius.circular(16),
-                                    topRight: const Radius.circular(16),
-                                    bottomLeft: Radius.circular(isMe ? 16 : 4),
-                                    bottomRight: Radius.circular(isMe ? 4 : 16),
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: isMe
-                                      ? CrossAxisAlignment.end
-                                      : CrossAxisAlignment.start,
-                                  children: [
-                                    if (imgBytes != null) ...[
-                                      GestureDetector(
-                                        onTap: () => _openFullImage(imgBytes!),
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          child: Image.memory(
-                                            imgBytes,
-                                            fit: BoxFit.cover,
-                                            height: 180,
-                                            width: 220,
-                                          ),
-                                        ),
-                                      ),
-                                      if (msg.text.isNotEmpty)
-                                        const SizedBox(height: 6),
-                                    ],
-                                    if (msg.text.isNotEmpty)
-                                      Text(
-                                        msg.text,
-                                        style: const TextStyle(fontSize: 15),
-                                      ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      _formatTime(msg.createdAt),
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: scheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
+                            final bubble = Container(
+                              constraints: BoxConstraints(
+                                maxWidth:
+                                    MediaQuery.of(context).size.width * 0.72,
+                              ),
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: isMe
+                                    ? scheme.primaryContainer
+                                    : scheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: const Radius.circular(16),
+                                  topRight: const Radius.circular(16),
+                                  bottomLeft: Radius.circular(isMe ? 16 : 4),
+                                  bottomRight: Radius.circular(isMe ? 4 : 16),
                                 ),
                               ),
+                              child: Column(
+                                crossAxisAlignment: isMe
+                                    ? CrossAxisAlignment.end
+                                    : CrossAxisAlignment.start,
+                                children: [
+                                  if (imgBytes != null) ...[
+                                    GestureDetector(
+                                      onTap: () => _openFullImage(imgBytes!),
+                                      child: ClipRRect(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        child: Image.memory(
+                                          imgBytes,
+                                          fit: BoxFit.cover,
+                                          height: 180,
+                                          width: 220,
+                                        ),
+                                      ),
+                                    ),
+                                    if (msg.text.isNotEmpty)
+                                      const SizedBox(height: 6),
+                                  ],
+                                  if (msg.text.isNotEmpty)
+                                    Text(
+                                      msg.text,
+                                      style: const TextStyle(fontSize: 15),
+                                    ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    _formatTime(msg.createdAt),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (isMe) {
+                              return Align(
+                                alignment: Alignment.centerRight,
+                                child: bubble,
+                              );
+                            }
+
+                            // Show opponent's live profile picture beside every incoming chat message!
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    right: 8,
+                                    bottom: 6,
+                                  ),
+                                  child: LiveUserAvatar(
+                                    services: widget.services,
+                                    uid: widget.friendUid,
+                                    fallbackAvatarId: widget.friendAvatar,
+                                    fallbackPhotoBase64:
+                                        widget.friendPhotoBase64,
+                                    size: 30,
+                                    enableFullScreenPreview: true,
+                                  ),
+                                ),
+                                Flexible(child: bubble),
+                              ],
                             );
                           },
                         );
