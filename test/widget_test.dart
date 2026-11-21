@@ -221,7 +221,7 @@ void main() {
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 3.0.1 (Build 4)'), findsOneWidget);
+    expect(find.text('Version 3.0.2 (Build 5)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,

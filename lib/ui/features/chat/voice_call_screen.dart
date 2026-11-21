@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../../core/services/app_services.dart';
 import '../../../data/repositories/voice_call_repository.dart';
@@ -8,7 +9,8 @@ import '../../../domain/models/social_models.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/melow_avatar.dart';
 
-/// Real-time Peer-to-Peer WebRTC Voice Call screen (outgoing & incoming).
+/// Real-time Peer-to-Peer WebRTC Voice Call screen with bound remote audio sink,
+/// real ICE audio status, native mic permission, mute & speakerphone controls.
 class VoiceCallScreen extends StatefulWidget {
   const VoiceCallScreen.outgoing({
     super.key,
@@ -60,9 +62,9 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   StreamSubscription<VoiceCallSession?>? _callSub;
   Timer? _durationTimer;
   int _elapsedSeconds = 0;
-  String _statusText = 'Connecting…';
+  String _statusText = 'Requesting microphone…';
   bool _muted = false;
-  bool _speakerOn = false;
+  bool _speakerOn = true;
   bool _ended = false;
 
   @override
@@ -94,16 +96,17 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         return;
       }
 
-      _activeCall = call;
+      setState(() {
+        _activeCall = call;
+        _statusText = call.audioState.value;
+      });
+
+      call.audioState.addListener(_onAudioStateChanged);
+
       _callSub =
           widget.services.voiceCall.watchCall(call.callId).listen((session) {
         if (!mounted || session == null) return;
-        if (session.status == 'active') {
-          if (_durationTimer == null) {
-            _startTimer();
-          }
-          setState(() => _statusText = 'Connected');
-        } else if (session.status == 'declined') {
+        if (session.status == 'declined') {
           _closeWithMessage('Call declined');
         } else if (session.status == 'ended' || session.status == 'missed') {
           _closeWithMessage('Call ended');
@@ -118,6 +121,16 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     }
   }
 
+  void _onAudioStateChanged() {
+    final call = _activeCall;
+    if (!mounted || call == null || _ended) return;
+    final next = call.audioState.value;
+    if (next == 'Connected' && _durationTimer == null) {
+      _startTimer();
+    }
+    setState(() => _statusText = next);
+  }
+
   void _startTimer() {
     _durationTimer?.cancel();
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -129,6 +142,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
     if (_ended) return;
     _ended = true;
     _durationTimer?.cancel();
+    _activeCall?.audioState.removeListener(_onAudioStateChanged);
     await _activeCall?.hangUp(notifyRemote: false);
     if (!mounted) return;
     setState(() => _statusText = msg);
@@ -139,6 +153,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   Future<void> _hangUp() async {
     _ended = true;
     _durationTimer?.cancel();
+    _activeCall?.audioState.removeListener(_onAudioStateChanged);
     await _activeCall?.hangUp(notifyRemote: true);
     if (mounted) Navigator.pop(context);
   }
@@ -147,6 +162,7 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
   void dispose() {
     _durationTimer?.cancel();
     _callSub?.cancel();
+    _activeCall?.audioState.removeListener(_onAudioStateChanged);
     _activeCall?.hangUp(notifyRemote: !_ended);
     super.dispose();
   }
@@ -159,86 +175,108 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final call = _activeCall;
     return Scaffold(
       backgroundColor: AppTheme.darkBackground,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              const Text(
-                '🎙️ Melow Voice Call',
-                style: TextStyle(
-                  color: AppTheme.cyanAccent,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  letterSpacing: 0.6,
+        child: Stack(
+          children: [
+            // Hidden 1x1 RTCVideoView ensures Android WebRTC remote audio sink stays active.
+            if (call != null)
+              Positioned(
+                left: 0,
+                top: 0,
+                width: 1,
+                height: 1,
+                child: Opacity(
+                  opacity: 0.01,
+                  child: RTCVideoView(call.remoteRenderer),
                 ),
               ),
-              const Spacer(),
-              MelowAvatar(
-                avatarId: widget._peerAvatar,
-                size: 112,
-                borderColor: AppTheme.purpleAccent,
-              ),
-              const SizedBox(height: 20),
-              Text(
-                widget._peerName,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _durationTimer != null
-                    ? '$_statusText • ${_formatDuration(_elapsedSeconds)}'
-                    : _statusText,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.78),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
                 children: [
-                  _CallControlButton(
-                    icon: _muted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                    label: _muted ? 'Unmute' : 'Mute',
-                    active: _muted,
-                    onTap: () {
-                      setState(() => _muted = !_muted);
-                      _activeCall?.setMuted(_muted);
-                    },
+                  const SizedBox(height: 20),
+                  const Text(
+                    '🎙️ Melow Voice Call',
+                    style: TextStyle(
+                      color: AppTheme.cyanAccent,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      letterSpacing: 0.6,
+                    ),
                   ),
-                  _CallControlButton(
-                    icon: _speakerOn
-                        ? Icons.volume_up_rounded
-                        : Icons.hearing_rounded,
-                    label: 'Speaker',
-                    active: _speakerOn,
-                    onTap: () {
-                      setState(() => _speakerOn = !_speakerOn);
-                      _activeCall?.setSpeakerphone(_speakerOn);
-                    },
+                  const Spacer(),
+                  MelowAvatar(
+                    avatarId: widget._peerAvatar,
+                    size: 112,
+                    borderColor: _durationTimer != null
+                        ? Colors.greenAccent
+                        : AppTheme.purpleAccent,
                   ),
-                  _CallControlButton(
-                    icon: Icons.call_end_rounded,
-                    label: 'End',
-                    danger: true,
-                    onTap: _hangUp,
+                  const SizedBox(height: 20),
+                  Text(
+                    widget._peerName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _durationTimer != null && _statusText == 'Connected'
+                        ? 'Live Audio • ${_formatDuration(_elapsedSeconds)}'
+                        : _statusText,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _durationTimer != null
+                          ? Colors.greenAccent
+                          : Colors.white.withValues(alpha: 0.8),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _CallControlButton(
+                        icon:
+                            _muted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                        label: _muted ? 'Unmute' : 'Mute',
+                        active: _muted,
+                        onTap: () {
+                          setState(() => _muted = !_muted);
+                          _activeCall?.setMuted(_muted);
+                        },
+                      ),
+                      _CallControlButton(
+                        icon: _speakerOn
+                            ? Icons.volume_up_rounded
+                            : Icons.hearing_rounded,
+                        label: _speakerOn ? 'Speaker' : 'Earpiece',
+                        active: _speakerOn,
+                        onTap: () {
+                          setState(() => _speakerOn = !_speakerOn);
+                          _activeCall?.setSpeakerphone(_speakerOn);
+                        },
+                      ),
+                      _CallControlButton(
+                        icon: Icons.call_end_rounded,
+                        label: 'End',
+                        danger: true,
+                        onTap: _hangUp,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
                 ],
               ),
-              const SizedBox(height: 28),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
