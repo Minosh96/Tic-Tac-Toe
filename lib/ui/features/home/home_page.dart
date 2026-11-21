@@ -806,64 +806,96 @@ class _HomePageState extends State<HomePage> {
                                               final unread = chatMap[f.friendUid]
                                                       ?.unreadCountFor(uid) ??
                                                   0;
-                                              return InkWell(
-                                                borderRadius:
-                                                    BorderRadius.circular(14),
-                                                onTap: () => Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (_) =>
-                                                        FriendChatScreen(
-                                                      services: widget.services,
-                                                      friendUid: f.friendUid,
-                                                      friendName: f.nickname,
-                                                      friendAvatar: f.avatarId,
-                                                      friendPhotoBase64:
-                                                          f.photoBase64,
-                                                    ),
-                                                  ),
-                                                ),
-                                                child: SizedBox(
-                                                  width: 72,
-                                                  child: Column(
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .center,
-                                                    children: [
-                                                      Badge(
-                                                        isLabelVisible:
-                                                            unread > 0,
-                                                        label: Text(
-                                                          unread > 99
-                                                              ? '99+'
-                                                              : '$unread',
-                                                        ),
-                                                        child: LiveUserAvatar(
+                                              return LiveUserProfileBuilder(
+                                                services: widget.services,
+                                                uid: f.friendUid,
+                                                builder:
+                                                    (context, liveProfile) {
+                                                  final liveName = (liveProfile
+                                                              ?.nickname
+                                                              .isNotEmpty ??
+                                                          false)
+                                                      ? liveProfile!.nickname
+                                                      : f.nickname;
+                                                  final liveAvatar =
+                                                      liveProfile?.avatarId ??
+                                                          f.avatarId;
+                                                  final livePhoto = (liveProfile
+                                                              ?.photoBase64 !=
+                                                          null &&
+                                                      liveProfile!.photoBase64!
+                                                          .isNotEmpty)
+                                                      ? liveProfile.photoBase64
+                                                      : f.photoBase64;
+                                                  return InkWell(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            14),
+                                                    onTap: () => Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            FriendChatScreen(
                                                           services:
                                                               widget.services,
-                                                          uid: f.friendUid,
-                                                          fallbackAvatarId:
-                                                              f.avatarId,
-                                                          fallbackPhotoBase64:
-                                                              f.photoBase64,
-                                                          size: 46,
+                                                          friendUid:
+                                                              f.friendUid,
+                                                          friendName: liveName,
+                                                          friendAvatar:
+                                                              liveAvatar,
+                                                          friendPhotoBase64:
+                                                              livePhoto,
                                                         ),
                                                       ),
-                                                      const SizedBox(height: 6),
-                                                      Text(
-                                                        f.nickname,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: const TextStyle(
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                        ),
+                                                    ),
+                                                    child: SizedBox(
+                                                      width: 72,
+                                                      child: Column(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .center,
+                                                        children: [
+                                                          Badge(
+                                                            isLabelVisible:
+                                                                unread > 0,
+                                                            label: Text(
+                                                              unread > 99
+                                                                  ? '99+'
+                                                                  : '$unread',
+                                                            ),
+                                                            child:
+                                                                LiveUserAvatar(
+                                                              services: widget
+                                                                  .services,
+                                                              uid: f.friendUid,
+                                                              fallbackAvatarId:
+                                                                  liveAvatar,
+                                                              fallbackPhotoBase64:
+                                                                  livePhoto,
+                                                              size: 46,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                              height: 6),
+                                                          Text(
+                                                            liveName,
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style:
+                                                                const TextStyle(
+                                                              fontSize: 12,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
+                                                          ),
+                                                        ],
                                                       ),
-                                                    ],
-                                                  ),
-                                                ),
+                                                    ),
+                                                  );
+                                                },
                                               );
                                             },
                                           );

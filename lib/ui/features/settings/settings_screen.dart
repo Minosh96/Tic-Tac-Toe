@@ -180,7 +180,7 @@ class SettingsScreen extends StatelessWidget {
                     child: ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('About Melow Tic Tac Toe'),
-                      subtitle: const Text('Version 3.0.0 • Melow Labs'),
+                      subtitle: const Text('Version 3.4.0 • Melow Labs'),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => Navigator.push(
                         context,

@@ -760,8 +760,31 @@ class _FriendsPageState extends State<FriendsPage> {
                             return Column(
                               children: [
                                 for (final f in friends)
-                                  Builder(
-                                    builder: (context) {
+                                  LiveUserProfileBuilder(
+                                    services: widget.services,
+                                    uid: f.friendUid,
+                                    builder: (context, liveProfile) {
+                                      final liveName =
+                                          (liveProfile?.nickname.isNotEmpty ??
+                                                  false)
+                                              ? liveProfile!.nickname
+                                              : f.nickname;
+                                      final liveAvatarId =
+                                          liveProfile?.avatarId ?? f.avatarId;
+                                      final livePhoto =
+                                          (liveProfile?.photoBase64 != null &&
+                                                  liveProfile!
+                                                      .photoBase64!.isNotEmpty)
+                                              ? liveProfile.photoBase64
+                                              : f.photoBase64;
+                                      final liveFriend = FriendEntry(
+                                        friendUid: f.friendUid,
+                                        nickname: liveName,
+                                        avatarId: liveAvatarId,
+                                        photoBase64: livePhoto,
+                                        status: f.status,
+                                        since: f.since,
+                                      );
                                       final chatSummary =
                                           chatsByFriend[f.friendUid];
                                       final unread =
@@ -795,9 +818,9 @@ class _FriendsPageState extends State<FriendsPage> {
                                                             widget.services,
                                                         uid: f.friendUid,
                                                         fallbackAvatarId:
-                                                            f.avatarId,
+                                                            liveAvatarId,
                                                         fallbackPhotoBase64:
-                                                            f.photoBase64,
+                                                            livePhoto,
                                                         size: 46,
                                                         enableFullScreenPreview:
                                                             true,
@@ -811,7 +834,7 @@ class _FriendsPageState extends State<FriendsPage> {
                                                                 .start,
                                                         children: [
                                                           Text(
-                                                            f.nickname,
+                                                            liveName,
                                                             maxLines: 1,
                                                             overflow:
                                                                 TextOverflow
@@ -863,9 +886,9 @@ class _FriendsPageState extends State<FriendsPage> {
                                                                 opponentUid: f
                                                                     .friendUid,
                                                                 opponentName:
-                                                                    f.nickname,
+                                                                    liveName,
                                                                 opponentAvatar:
-                                                                    f.avatarId,
+                                                                    liveAvatarId,
                                                               ),
                                                             ),
                                                           );
@@ -876,7 +899,7 @@ class _FriendsPageState extends State<FriendsPage> {
                                                               .removeFriend(
                                                                   f.friendUid);
                                                           _snack(
-                                                            'Removed ${f.nickname}.',
+                                                            'Removed $liveName.',
                                                           );
                                                         } else if (action ==
                                                             'block') {
@@ -885,12 +908,13 @@ class _FriendsPageState extends State<FriendsPage> {
                                                               .blockUser(
                                                                   f.friendUid);
                                                           _snack(
-                                                            'Blocked ${f.nickname}.',
+                                                            'Blocked $liveName.',
                                                           );
                                                         } else if (action ==
                                                             'report') {
                                                           await _openReportDialog(
-                                                              f);
+                                                            liveFriend,
+                                                          );
                                                         }
                                                       },
                                                       itemBuilder: (_) =>
@@ -947,11 +971,11 @@ class _FriendsPageState extends State<FriendsPage> {
                                                               friendUid:
                                                                   f.friendUid,
                                                               friendName:
-                                                                  f.nickname,
+                                                                  liveName,
                                                               friendAvatar:
-                                                                  f.avatarId,
+                                                                  liveAvatarId,
                                                               friendPhotoBase64:
-                                                                  f.photoBase64,
+                                                                  livePhoto,
                                                             ),
                                                           ),
                                                         ),
@@ -999,9 +1023,9 @@ class _FriendsPageState extends State<FriendsPage> {
                                                                       calleeUid:
                                                                           f.friendUid,
                                                                       calleeName:
-                                                                          f.nickname,
+                                                                          liveName,
                                                                       calleeAvatar:
-                                                                          f.avatarId,
+                                                                          liveAvatarId,
                                                                       callerName:
                                                                           me.nickname,
                                                                       callerAvatar:
@@ -1038,7 +1062,8 @@ class _FriendsPageState extends State<FriendsPage> {
                                                             ? null
                                                             : () =>
                                                                 _openChallengeDialog(
-                                                                    me, f),
+                                                                    me,
+                                                                    liveFriend),
                                                         icon: const Icon(
                                                           Icons
                                                               .sports_esports_rounded,

@@ -125,6 +125,39 @@ class ProfileRepository {
 
     await _userRef(uid).update(patch);
 
+    // Sync updated nickname, avatar & gallery photo to all friends' friend-list entries
+    // so every friend sees the new name & gallery photo immediately!
+    try {
+      final friendsSnap = await _userRef(uid).collection('friends').get();
+      if (friendsSnap.docs.isNotEmpty) {
+        final batch = _db.batch();
+        for (final doc in friendsSnap.docs) {
+          final friendUid = doc.id;
+          final friendSideRef = _userRef(friendUid).collection('friends').doc(uid);
+          batch.update(friendSideRef, {
+            'nickname': nickname.trim(),
+            'avatarId': avatarId,
+            if (updatePhoto) 'photoBase64': photoBase64,
+          });
+        }
+        await batch.commit();
+      }
+    } catch (_) {
+      // Fallback per-friend update in case any friend removed us.
+      try {
+        final friendsSnap = await _userRef(uid).collection('friends').get();
+        for (final doc in friendsSnap.docs) {
+          try {
+            await _userRef(doc.id).collection('friends').doc(uid).update({
+              'nickname': nickname.trim(),
+              'avatarId': avatarId,
+              if (updatePhoto) 'photoBase64': photoBase64,
+            });
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
     // Keep leaderboard entry synced if user already has one.
     try {
       final lbRef = _db.collection('leaderboardEntries').doc(uid);

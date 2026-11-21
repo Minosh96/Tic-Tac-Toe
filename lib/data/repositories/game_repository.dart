@@ -34,6 +34,8 @@ class GameRepository {
 
   DateTime _lastReactionSentAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration reactionCooldown = Duration(milliseconds: 1500);
+  final Map<String, Future<void>> _inFlightMatchRecordings =
+      <String, Future<void>>{};
 
   Future<User> ensureSignedIn() async {
     final existing = _auth.currentUser;
@@ -336,31 +338,51 @@ class GameRepository {
 
   /// Idempotently records completed tournament results (cups, trophies,
   /// achievements, stats, rivalries, match history, and leaderboard) for the
-  /// signed-in player. Works immediately on Spark free tier AND defers safely
-  /// to Cloud Functions when deployed on Blaze.
-  Future<void> recordFinishedMatchForCurrentUser(GameRoom room) async {
+  /// signed-in player with in-memory deduplication so winning a cup NEVER
+  /// triggers concurrent-transaction Firebase errors.
+  Future<void> recordFinishedMatchForCurrentUser(GameRoom room) {
     if (!room.isFinished ||
         room.champion.isEmpty ||
         room.hostId.isEmpty ||
         room.guestId.isEmpty) {
-      return;
+      return Future<void>.value();
     }
     final myUid = maybeCurrentUid;
-    if (myUid == null) return;
+    if (myUid == null) return Future<void>.value();
     final mySide = room.sideForUid(myUid);
-    if (mySide == null) return;
+    if (mySide == null) return Future<void>.value();
 
     final matchId =
         '${room.code}__${room.hostWins}_${room.guestWins}_${room.draws}_${room.round}';
+    final existing = _inFlightMatchRecordings[matchId];
+    if (existing != null) return existing;
+
+    final future = _doRecordFinishedMatch(
+      room: room,
+      myUid: myUid,
+      mySide: mySide,
+      matchId: matchId,
+    ).whenComplete(() => _inFlightMatchRecordings.remove(matchId));
+    _inFlightMatchRecordings[matchId] = future;
+    return future;
+  }
+
+  Future<void> _doRecordFinishedMatch({
+    required GameRoom room,
+    required String myUid,
+    required String mySide,
+    required String matchId,
+  }) async {
     final processedRef = _db
         .collection('users')
         .doc(myUid)
         .collection('processedMatches')
         .doc(matchId);
 
-    // Quick guard to avoid repeating work on stream rebuilds.
-    final already = await processedRef.get();
-    if (already.exists) return;
+    try {
+      final already = await processedRef.get();
+      if (already.exists) return;
+    } catch (_) {}
 
     final iWon = room.champion == mySide;
     final winnerUid = room.champion == 'h' ? room.hostId : room.guestId;
@@ -381,153 +403,183 @@ class GameRepository {
     int nextBlitzWins = 0;
     int nextMegaWins = 0;
     int nextRivalryTotal = 1;
+    bool recordedOwnerStats = false;
 
-    await _db.runTransaction((tx) async {
-      final procSnap = await tx.get(processedRef);
-      if (procSnap.exists) return;
+    // Step 1: Owner-only atomic transaction (processedMatches + stats + Melow Cup trophy + leaderboard).
+    // Kept separate from shared rivalry/match docs so opponent contention can never abort your cup!
+    try {
+      await _db.runTransaction((tx) async {
+        final procSnap = await tx.get(processedRef);
+        if (procSnap.exists) return;
 
-      final statsSnap = await tx.get(statsRef);
-      final userSnap = await tx.get(userRef);
-      final rivalSnap = await tx.get(rivalryRef);
-      final matchSnap = await tx.get(matchRef);
+        final statsSnap = await tx.get(statsRef);
+        final userSnap = await tx.get(userRef);
 
-      final prevStats = statsSnap.data() ?? const <String, dynamic>{};
-      final userData = userSnap.data() ?? const <String, dynamic>{};
-      final prevRival = rivalSnap.data() ?? const <String, dynamic>{};
+        final prevStats = statsSnap.data() ?? const <String, dynamic>{};
+        final userData = userSnap.data() ?? const <String, dynamic>{};
 
-      final gamesPlayed = ((prevStats['gamesPlayed'] as num?)?.toInt() ?? 0) + 1;
-      nextWins =
-          ((prevStats['wins'] as num?)?.toInt() ?? 0) + (iWon ? 1 : 0);
-      final losses =
-          ((prevStats['losses'] as num?)?.toInt() ?? 0) + (iWon ? 0 : 1);
-      final draws = (prevStats['draws'] as num?)?.toInt() ?? 0;
-      nextTournaments =
-          ((prevStats['tournamentsWon'] as num?)?.toInt() ?? 0) +
-              (iWon ? 1 : 0);
-      final currentStreak = iWon
-          ? ((prevStats['currentStreak'] as num?)?.toInt() ?? 0) + 1
-          : 0;
-      final prevBest = (prevStats['bestStreak'] as num?)?.toInt() ?? 0;
-      final bestStreak = currentStreak > prevBest ? currentStreak : prevBest;
-      nextBlitzWins = ((prevStats['blitzWins'] as num?)?.toInt() ?? 0) +
-          (iWon && room.isBlitz ? 1 : 0);
-      nextMegaWins = ((prevStats['megaWins'] as num?)?.toInt() ?? 0) +
-          (iWon && room.size >= 5 ? 1 : 0);
-      final trophyCount =
-          ((prevStats['trophyCount'] as num?)?.toInt() ?? 0) + (iWon ? 1 : 0);
+        final gamesPlayed =
+            ((prevStats['gamesPlayed'] as num?)?.toInt() ?? 0) + 1;
+        nextWins =
+            ((prevStats['wins'] as num?)?.toInt() ?? 0) + (iWon ? 1 : 0);
+        final losses =
+            ((prevStats['losses'] as num?)?.toInt() ?? 0) + (iWon ? 0 : 1);
+        final draws = (prevStats['draws'] as num?)?.toInt() ?? 0;
+        nextTournaments =
+            ((prevStats['tournamentsWon'] as num?)?.toInt() ?? 0) +
+                (iWon ? 1 : 0);
+        final currentStreak = iWon
+            ? ((prevStats['currentStreak'] as num?)?.toInt() ?? 0) + 1
+            : 0;
+        final prevBest = (prevStats['bestStreak'] as num?)?.toInt() ?? 0;
+        final bestStreak = currentStreak > prevBest ? currentStreak : prevBest;
+        nextBlitzWins = ((prevStats['blitzWins'] as num?)?.toInt() ?? 0) +
+            (iWon && room.isBlitz ? 1 : 0);
+        nextMegaWins = ((prevStats['megaWins'] as num?)?.toInt() ?? 0) +
+            (iWon && room.size >= 5 ? 1 : 0);
+        final trophyCount =
+            ((prevStats['trophyCount'] as num?)?.toInt() ?? 0) + (iWon ? 1 : 0);
 
-      // 1. Mark processed for this user (prevents duplicate counting forever).
-      tx.set(processedRef, {
-        'roomId': room.code,
-        'processedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 2. Update user's stats document.
-      tx.set(statsRef, {
-        'gamesPlayed': gamesPlayed,
-        'wins': nextWins,
-        'losses': losses,
-        'draws': draws,
-        'tournamentsWon': nextTournaments,
-        'currentStreak': currentStreak,
-        'bestStreak': bestStreak,
-        'blitzWins': nextBlitzWins,
-        'megaWins': nextMegaWins,
-        'trophyCount': trophyCount,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 3. Award Melow Cup Trophy if this user is the verified room champion.
-      if (iWon) {
-        final trophyId = 'cup_$matchId';
-        tx.set(
-          _db.collection('users').doc(myUid).collection('trophies').doc(trophyId),
-          {
-            'trophyId': trophyId,
-            'matchId': matchId,
-            'roomId': room.code,
-            'title':
-                'Melow Cup (${room.size}×${room.size} ${room.isBlitz ? 'Blitz' : 'Classic'})',
-            'awardedAt': FieldValue.serverTimestamp(),
-          },
-        );
-      }
-
-      // 4. Update user's leaderboard entry.
-      tx.set(leaderboardRef, {
-        'publicNickname': userData['nickname'] ?? room.playerName(mySide),
-        'avatarId': userData['avatarId'] ?? room.playerAvatar(mySide),
-        if (userData['photoBase64'] is String)
-          'photoBase64': userData['photoBase64'],
-        'wins': nextWins,
-        'tournamentsWon': nextTournaments,
-        'bestStreak': bestStreak,
-        'blitzWins': nextBlitzWins,
-        'optIn': userData['leaderboardOptIn'] != false,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 5. Winner creates the shared immutable match summary & increments rivalry once.
-      if (iWon && !matchSnap.exists) {
-        tx.set(matchRef, {
+        tx.set(processedRef, {
           'roomId': room.code,
-          'players': [room.hostId, room.guestId],
-          'playerNames': {
-            room.hostId: room.hostName,
-            room.guestId: room.guestName,
-          },
-          'gameMode': room.gameMode.id,
-          'boardSize': room.size,
-          'hostWins': room.hostWins,
-          'guestWins': room.guestWins,
-          'draws': room.draws,
-          'finalWinnerUid': winnerUid,
-          'finalStatus': 'won',
-          'completedAt': FieldValue.serverTimestamp(),
           'processedAt': FieldValue.serverTimestamp(),
         });
 
-        final prevWinsMap = Map<String, dynamic>.from(
-          prevRival['winsByPlayer'] as Map? ?? const {},
-        );
-        final hostRivalWins =
-            ((prevWinsMap[room.hostId] as num?)?.toInt() ?? 0) +
-                (winnerUid == room.hostId ? 1 : 0);
-        final guestRivalWins =
-            ((prevWinsMap[room.guestId] as num?)?.toInt() ?? 0) +
-                (winnerUid == room.guestId ? 1 : 0);
-        nextRivalryTotal =
-            ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) + 1;
-        final prevStreakOwner =
-            prevRival['currentStreakOwner'] as String? ?? '';
-        final nextRivalStreak = prevStreakOwner == winnerUid
-            ? ((prevRival['currentStreak'] as num?)?.toInt() ?? 0) + 1
-            : 1;
-        final prevRivalBest = (prevRival['bestStreak'] as num?)?.toInt() ?? 0;
-
-        tx.set(rivalryRef, {
-          'playerUids': [room.hostId, room.guestId]..sort(),
-          'winsByPlayer': {
-            room.hostId: hostRivalWins,
-            room.guestId: guestRivalWins,
-          },
-          'draws': (prevRival['draws'] as num?)?.toInt() ?? 0,
-          'totalMatches': nextRivalryTotal,
-          'currentStreakOwner': winnerUid,
-          'currentStreak': nextRivalStreak,
-          'bestStreak': nextRivalStreak > prevRivalBest
-              ? nextRivalStreak
-              : prevRivalBest,
-          'lastMatchAt': FieldValue.serverTimestamp(),
+        tx.set(statsRef, {
+          'gamesPlayed': gamesPlayed,
+          'wins': nextWins,
+          'losses': losses,
+          'draws': draws,
+          'tournamentsWon': nextTournaments,
+          'currentStreak': currentStreak,
+          'bestStreak': bestStreak,
+          'blitzWins': nextBlitzWins,
+          'megaWins': nextMegaWins,
+          'trophyCount': trophyCount,
+          'updatedAt': FieldValue.serverTimestamp(),
         });
-      } else {
-        nextRivalryTotal =
-            ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) +
-                (opponentUid.isNotEmpty ? 1 : 0);
-      }
-    });
 
-    // 6. Update deterministic achievements progress & unlocks (preserving prior unlocks).
+        if (iWon) {
+          final trophyId = 'cup_$matchId';
+          tx.set(
+            _db
+                .collection('users')
+                .doc(myUid)
+                .collection('trophies')
+                .doc(trophyId),
+            {
+              'trophyId': trophyId,
+              'matchId': matchId,
+              'roomId': room.code,
+              'title':
+                  'Melow Cup (${room.size}×${room.size} ${room.isBlitz ? 'Blitz' : 'Classic'})',
+              'awardedAt': FieldValue.serverTimestamp(),
+            },
+          );
+        }
+
+        final rawNick =
+            ((userData['nickname'] as String?) ?? room.playerName(mySide))
+                .trim();
+        final safeNick = rawNick.isEmpty
+            ? 'Player'
+            : (rawNick.length > 20 ? rawNick.substring(0, 20) : rawNick);
+        final rawAvatar =
+            ((userData['avatarId'] as String?) ?? room.playerAvatar(mySide))
+                .trim();
+        final safeAvatar = rawAvatar.isEmpty ? 'astro' : rawAvatar;
+
+        tx.set(leaderboardRef, {
+          'publicNickname': safeNick,
+          'avatarId': safeAvatar,
+          if (userData['photoBase64'] is String &&
+              (userData['photoBase64'] as String).length <= 140000)
+            'photoBase64': userData['photoBase64'],
+          'wins': nextWins,
+          'tournamentsWon': nextTournaments,
+          'bestStreak': bestStreak,
+          'blitzWins': nextBlitzWins,
+          'optIn': userData['leaderboardOptIn'] != false,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        recordedOwnerStats = true;
+      });
+    } catch (_) {
+      return;
+    }
+
+    if (!recordedOwnerStats) return;
+
+    // Step 2: Shared match summary & rivalry stats (isolated so contention never affects cups/stats).
+    try {
+      await _db.runTransaction((tx) async {
+        final rivalSnap = await tx.get(rivalryRef);
+        final matchSnap = await tx.get(matchRef);
+        final prevRival = rivalSnap.data() ?? const <String, dynamic>{};
+
+        if (iWon && !matchSnap.exists) {
+          tx.set(matchRef, {
+            'roomId': room.code,
+            'players': [room.hostId, room.guestId],
+            'playerNames': {
+              room.hostId: room.hostName,
+              room.guestId: room.guestName,
+            },
+            'gameMode': room.gameMode.id,
+            'boardSize': room.size,
+            'hostWins': room.hostWins,
+            'guestWins': room.guestWins,
+            'draws': room.draws,
+            'finalWinnerUid': winnerUid,
+            'finalStatus': 'won',
+            'completedAt': FieldValue.serverTimestamp(),
+            'processedAt': FieldValue.serverTimestamp(),
+          });
+
+          final prevWinsMap = Map<String, dynamic>.from(
+            prevRival['winsByPlayer'] as Map? ?? const {},
+          );
+          final hostRivalWins =
+              ((prevWinsMap[room.hostId] as num?)?.toInt() ?? 0) +
+                  (winnerUid == room.hostId ? 1 : 0);
+          final guestRivalWins =
+              ((prevWinsMap[room.guestId] as num?)?.toInt() ?? 0) +
+                  (winnerUid == room.guestId ? 1 : 0);
+          nextRivalryTotal =
+              ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) + 1;
+          final prevStreakOwner =
+              prevRival['currentStreakOwner'] as String? ?? '';
+          final nextRivalStreak = prevStreakOwner == winnerUid
+              ? ((prevRival['currentStreak'] as num?)?.toInt() ?? 0) + 1
+              : 1;
+          final prevRivalBest =
+              (prevRival['bestStreak'] as num?)?.toInt() ?? 0;
+
+          tx.set(rivalryRef, {
+            'playerUids': [room.hostId, room.guestId]..sort(),
+            'winsByPlayer': {
+              room.hostId: hostRivalWins,
+              room.guestId: guestRivalWins,
+            },
+            'draws': (prevRival['draws'] as num?)?.toInt() ?? 0,
+            'totalMatches': nextRivalryTotal,
+            'currentStreakOwner': winnerUid,
+            'currentStreak': nextRivalStreak,
+            'bestStreak': nextRivalStreak > prevRivalBest
+                ? nextRivalStreak
+                : prevRivalBest,
+            'lastMatchAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          nextRivalryTotal =
+              ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) +
+                  (opponentUid.isNotEmpty ? 1 : 0);
+        }
+      });
+    } catch (_) {}
+
+    // Step 3: Update deterministic achievements progress & unlocks (preserving prior unlocks).
     try {
       final achCol = _db.collection('users').doc(myUid).collection('achievements');
       final existingSnap = await achCol.get();
@@ -569,14 +621,11 @@ class GameRepository {
 
   Future<void> _tryCloudFinalizeOrLocal(String code) async {
     try {
-      final callable = _functions.httpsCallable('finalizeMatch');
-      await callable.call({'roomId': code});
-      return;
+      final snap = await _roomRef(code).get();
+      if (snap.exists && snap.data() != null) {
+        await recordFinishedMatchForCurrentUser(GameRoom.fromFirestore(snap));
+      }
     } catch (_) {}
-    final snap = await _roomRef(code).get();
-    if (snap.exists && snap.data() != null) {
-      await recordFinishedMatchForCurrentUser(GameRoom.fromFirestore(snap));
-    }
   }
 
   Future<void> startNextRound(String code) async {

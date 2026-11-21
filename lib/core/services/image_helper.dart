@@ -14,9 +14,9 @@ class ImageHelper {
   static Future<String?> pickProfilePhotoBase64() async {
     final file = await _picker.pickImage(
       source: ImageSource.gallery,
-      maxWidth: 256,
-      maxHeight: 256,
-      imageQuality: 70,
+      maxWidth: 220,
+      maxHeight: 220,
+      imageQuality: 65,
     );
     if (file == null) return null;
     final bytes = await file.readAsBytes();

@@ -46,6 +46,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   Future<void> _initNotifications() async {
     await PushNotificationService.requestPermission();
+    // Start lightweight Android foreground service so incoming calls & messages
+    // still notify & ring even while the phone screen is locked.
+    await PushNotificationService.startBackgroundKeepAlive();
     if (!mounted) return;
     final uid = widget.services.game.currentUid;
 

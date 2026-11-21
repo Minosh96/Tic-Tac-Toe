@@ -67,4 +67,18 @@ class PushNotificationService {
       });
     } catch (_) {}
   }
+
+  /// Starts Android foreground keep-alive service so live messages & voice calls
+  /// still wake the phone and ring even while the phone is locked.
+  static Future<void> startBackgroundKeepAlive() async {
+    try {
+      await _channel.invokeMethod('startBackgroundKeepAlive');
+    } catch (_) {}
+  }
+
+  static Future<void> stopBackgroundKeepAlive() async {
+    try {
+      await _channel.invokeMethod('stopBackgroundKeepAlive');
+    } catch (_) {}
+  }
 }

@@ -1,6 +1,7 @@
 package com.melowlabs.melow_tic_tac_toe
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -21,6 +22,7 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.Process
 import android.util.Base64
 import androidx.core.app.ActivityCompat
@@ -127,6 +129,16 @@ class MainActivity : FlutterActivity() {
                     "cancelMessageNotification" -> {
                         val notifId = call.argument<Int>("id") ?: 1001
                         NotificationManagerCompat.from(this).cancel(notifId)
+                        result.success(true)
+                    }
+
+                    "startBackgroundKeepAlive" -> {
+                        startKeepAliveService()
+                        result.success(true)
+                    }
+
+                    "stopBackgroundKeepAlive" -> {
+                        stopKeepAliveService()
                         result.success(true)
                     }
 
@@ -550,6 +562,47 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 
+    private fun startKeepAliveService() {
+        try {
+            val intent = Intent(this, MelowKeepAliveService::class.java).apply {
+                action = MelowKeepAliveService.ACTION_START
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(this, intent)
+            } else {
+                startService(intent)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun stopKeepAliveService() {
+        try {
+            val intent = Intent(this, MelowKeepAliveService::class.java).apply {
+                action = MelowKeepAliveService.ACTION_STOP
+            }
+            startService(intent)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun wakeScreenBriefly(durationMs: Long) {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isInteractive) {
+                @Suppress("DEPRECATION")
+                val wl = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                        PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                        PowerManager.ON_AFTER_RELEASE,
+                    "melow:notification_wake"
+                )
+                wl.acquire(durationMs)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     private fun ensureNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -562,6 +615,7 @@ class MainActivity : FlutterActivity() {
             description = "Notifications for new friend chat messages"
             enableVibration(true)
             setShowBadge(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
         nm.createNotificationChannel(msgChannel)
 
@@ -580,6 +634,7 @@ class MainActivity : FlutterActivity() {
             vibrationPattern = longArrayOf(0, 450, 250, 450)
             setSound(ringtoneUri, callAudioAttr)
             setShowBadge(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
         nm.createNotificationChannel(callChannel)
     }
@@ -607,6 +662,7 @@ class MainActivity : FlutterActivity() {
     private fun showMessageNotification(notifId: Int, title: String, body: String, count: Int) {
         if (!canPostNotifications()) return
         ensureNotificationChannels()
+        wakeScreenBriefly(3500L)
         val builder = NotificationCompat.Builder(this, NOTIF_CH_MESSAGES)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
@@ -614,6 +670,8 @@ class MainActivity : FlutterActivity() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setAutoCancel(true)
             .setNumber(count)
             .setContentIntent(createOpenAppPendingIntent(notifId))
@@ -629,18 +687,26 @@ class MainActivity : FlutterActivity() {
     private fun showCallNotification(callId: String, callerName: String) {
         if (!canPostNotifications()) return
         ensureNotificationChannels()
+        wakeScreenBriefly(8000L)
         val id = callNotificationId(callId)
+        val openPending = createOpenAppPendingIntent(id)
         val builder = NotificationCompat.Builder(this, NOTIF_CH_CALLS)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Incoming Voice Call")
             .setContentText("$callerName is calling you on Melow Tic Tac Toe")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setFullScreenIntent(openPending, true)
             .setAutoCancel(true)
+            .setOngoing(true)
             .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
-            .setContentIntent(createOpenAppPendingIntent(id))
+            .setContentIntent(openPending)
+        val notification = builder.build().apply {
+            flags = flags or Notification.FLAG_INSISTENT
+        }
         try {
-            NotificationManagerCompat.from(this).notify(id, builder.build())
+            NotificationManagerCompat.from(this).notify(id, notification)
         } catch (_: SecurityException) {
         }
     }

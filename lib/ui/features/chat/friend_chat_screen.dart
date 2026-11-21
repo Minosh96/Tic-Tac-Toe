@@ -213,26 +213,35 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: Row(
-          children: [
-            // LiveUserAvatar immediately displays friend's custom gallery profile photo!
-            LiveUserAvatar(
-              services: widget.services,
-              uid: widget.friendUid,
-              fallbackAvatarId: widget.friendAvatar,
-              fallbackPhotoBase64: widget.friendPhotoBase64,
-              size: 40,
-              enableFullScreenPreview: true,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                widget.friendName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        title: LiveUserProfileBuilder(
+          services: widget.services,
+          uid: widget.friendUid,
+          builder: (context, liveProfile) {
+            final liveName = (liveProfile?.nickname.isNotEmpty ?? false)
+                ? liveProfile!.nickname
+                : widget.friendName;
+            return Row(
+              children: [
+                // LiveUserAvatar immediately displays friend's custom gallery profile photo!
+                LiveUserAvatar(
+                  services: widget.services,
+                  uid: widget.friendUid,
+                  fallbackAvatarId: widget.friendAvatar,
+                  fallbackPhotoBase64: widget.friendPhotoBase64,
+                  size: 40,
+                  enableFullScreenPreview: true,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    liveName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         actions: [
           IconButton.filledTonal(

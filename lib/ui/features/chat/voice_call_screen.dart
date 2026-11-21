@@ -287,13 +287,19 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
                       borderColor: AppTheme.purpleAccent,
                     ),
                   const SizedBox(height: 20),
-                  Text(
-                    widget._peerName,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 27,
-                      fontWeight: FontWeight.w900,
+                  LiveUserProfileBuilder(
+                    services: widget.services,
+                    uid: widget._peerUid,
+                    builder: (context, liveProfile) => Text(
+                      (liveProfile?.nickname.isNotEmpty ?? false)
+                          ? liveProfile!.nickname
+                          : widget._peerName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 27,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),

@@ -8,9 +8,78 @@ import '../../../domain/models/user_profile.dart';
 import 'melow_avatar.dart';
 
 /// Streams a player's live `users/{uid}` profile with an in-memory cache and
-/// stable stream subscription so custom gallery photos appear immediately and
-/// never flicker during screen rebuilds (chat messages, live call timers, etc.).
-class LiveUserAvatar extends StatefulWidget {
+/// stable stream subscription so updated nicknames and custom gallery photos
+/// appear immediately across Friends, Home, Chat, Calls & Notifications.
+class LiveUserProfileBuilder extends StatefulWidget {
+  const LiveUserProfileBuilder({
+    super.key,
+    required this.services,
+    required this.uid,
+    required this.builder,
+  });
+
+  final AppServices services;
+  final String uid;
+  final Widget Function(BuildContext context, UserProfile? profile) builder;
+
+  static final Map<String, UserProfile> cache = <String, UserProfile>{};
+
+  @override
+  State<LiveUserProfileBuilder> createState() => _LiveUserProfileBuilderState();
+}
+
+class _LiveUserProfileBuilderState extends State<LiveUserProfileBuilder> {
+  Stream<UserProfile?>? _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _initStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant LiveUserProfileBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.uid != widget.uid) {
+      _initStream();
+    }
+  }
+
+  void _initStream() {
+    if (widget.uid.isEmpty) {
+      _stream = null;
+      return;
+    }
+    _stream = widget.services.profile.watchProfile(widget.uid).map((profile) {
+      if (profile != null) {
+        if (LiveUserProfileBuilder.cache.length > 100) {
+          LiveUserProfileBuilder.cache.clear();
+        }
+        LiveUserProfileBuilder.cache[widget.uid] = profile;
+      }
+      return profile;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.uid.isEmpty || _stream == null) {
+      return widget.builder(context, null);
+    }
+    final cached = LiveUserProfileBuilder.cache[widget.uid];
+    return StreamBuilder<UserProfile?>(
+      stream: _stream,
+      initialData: cached,
+      builder: (context, snap) {
+        return widget.builder(context, snap.data ?? cached);
+      },
+    );
+  }
+}
+
+/// Renders a player's live avatar (custom gallery photo or built-in avatar)
+/// backed by [LiveUserProfileBuilder].
+class LiveUserAvatar extends StatelessWidget {
   const LiveUserAvatar({
     super.key,
     required this.services,
@@ -29,45 +98,6 @@ class LiveUserAvatar extends StatefulWidget {
   final double size;
   final Color? borderColor;
   final bool enableFullScreenPreview;
-
-  static final Map<String, UserProfile> _cache = <String, UserProfile>{};
-
-  @override
-  State<LiveUserAvatar> createState() => _LiveUserAvatarState();
-}
-
-class _LiveUserAvatarState extends State<LiveUserAvatar> {
-  Stream<UserProfile?>? _stream;
-
-  @override
-  void initState() {
-    super.initState();
-    _initStream();
-  }
-
-  @override
-  void didUpdateWidget(covariant LiveUserAvatar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.uid != widget.uid) {
-      _initStream();
-    }
-  }
-
-  void _initStream() {
-    if (widget.uid.isEmpty) {
-      _stream = null;
-      return;
-    }
-    _stream = widget.services.profile.watchProfile(widget.uid).map((profile) {
-      if (profile != null) {
-        if (LiveUserAvatar._cache.length > 100) {
-          LiveUserAvatar._cache.clear();
-        }
-        LiveUserAvatar._cache[widget.uid] = profile;
-      }
-      return profile;
-    });
-  }
 
   void _openPreview(BuildContext context, String photoBase64, String? nickname) {
     Uint8List? bytes;
@@ -125,31 +155,20 @@ class _LiveUserAvatarState extends State<LiveUserAvatar> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.uid.isEmpty || _stream == null) {
-      return MelowAvatar(
-        avatarId: widget.fallbackAvatarId,
-        photoBase64: widget.fallbackPhotoBase64,
-        size: widget.size,
-        borderColor: widget.borderColor,
-      );
-    }
-
-    final cached = LiveUserAvatar._cache[widget.uid];
-    return StreamBuilder<UserProfile?>(
-      stream: _stream,
-      initialData: cached,
-      builder: (context, snap) {
-        final p = snap.data ?? cached;
+    return LiveUserProfileBuilder(
+      services: services,
+      uid: uid,
+      builder: (context, p) {
         final photo = (p?.photoBase64 != null && p!.photoBase64!.isNotEmpty)
             ? p.photoBase64
-            : widget.fallbackPhotoBase64;
+            : fallbackPhotoBase64;
         final avatar = MelowAvatar(
-          avatarId: p?.avatarId ?? widget.fallbackAvatarId,
+          avatarId: p?.avatarId ?? fallbackAvatarId,
           photoBase64: photo,
-          size: widget.size,
-          borderColor: widget.borderColor,
+          size: size,
+          borderColor: borderColor,
         );
-        if (widget.enableFullScreenPreview && photo != null && photo.isNotEmpty) {
+        if (enableFullScreenPreview && photo != null && photo.isNotEmpty) {
           return GestureDetector(
             onTap: () => _openPreview(context, photo, p?.nickname),
             child: avatar,
