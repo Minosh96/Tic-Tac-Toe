@@ -105,7 +105,7 @@ class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
+          minimumSize: const Size(64, 48),
           textStyle: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -117,7 +117,7 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size.fromHeight(50),
+          minimumSize: const Size(64, 46),
           textStyle: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,

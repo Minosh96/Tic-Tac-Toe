@@ -187,6 +187,33 @@ void main() {
     expect(expiredCount, 1);
   });
 
+  testWidgets('ListTile with trailing FilledButton never crushes title vertically', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            child: ListTile(
+              title: const Text('Player_9C1F'),
+              subtitle: const Text('Favorite mark: ❌'),
+              trailing: FilledButton.tonal(
+                onPressed: () {},
+                child: const Text('Add'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final titleSize = tester.getSize(find.text('Player_9C1F'));
+    expect(titleSize.width, greaterThan(100));
+    expect(titleSize.height, lessThan(40));
+  });
+
   testWidgets('AboutScreen shows v3.0 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {
@@ -194,7 +221,7 @@ void main() {
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 3.0.0 (Build 3)'), findsOneWidget);
+    expect(find.text('Version 3.0.1 (Build 4)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,

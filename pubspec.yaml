@@ -1,7 +1,7 @@
 name: melow_tic_tac_toe
 description: Multiplayer emoji tic tac toe by Melow Labs
 publish_to: none
-version: 3.0.0+3
+version: 3.0.1+4
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
