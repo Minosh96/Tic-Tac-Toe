@@ -51,6 +51,7 @@ firebase-debug.log
 firebase-debug.*.log
 /android/build/
 /android/.kotlin/
-android/key.properties
-*.jks
-*.keystore
+# Signing keys and keystores (NEVER commit to version control)
+**/key.properties
+**/*.jks
+**/*.keystore
