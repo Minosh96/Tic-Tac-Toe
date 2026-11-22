@@ -30,20 +30,24 @@ jobs:
           cache: true
 
       - name: Configure release signing (when GitHub Secrets are set)
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
-          cat <<EOF > android/key.properties
-          storePassword=$KEYSTORE_PASSWORD
-          keyPassword=$KEY_PASSWORD
-          keyAlias=$KEY_ALIAS
-          storeFile=upload-keystore.jks
-          EOF
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+            cat <<EOF > android/key.properties
+            storePassword=$KEYSTORE_PASSWORD
+            keyPassword=$KEY_PASSWORD
+            keyAlias=$KEY_ALIAS
+            storeFile=upload-keystore.jks
+            EOF
+            echo "Upload keystore and key.properties created."
+          else
+            echo "KEYSTORE_BASE64 secret is not configured; using debug signing fallback."
+          fi
 
       - name: Install dependencies
         run: flutter pub get
@@ -58,7 +62,6 @@ jobs:
         run: flutter build apk --release
 
       - name: Build Play Store App Bundle (.aab)
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         run: flutter build appbundle --release
 
       - name: Rename release binaries
