@@ -49,12 +49,10 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                // Fallback for unsigned local/CI preview builds when key.properties is absent.
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.findByName("release")
+                ?: throw GradleException(
+                    "Release keystore missing! Check android/key.properties"
+                )
         }
     }
 }
