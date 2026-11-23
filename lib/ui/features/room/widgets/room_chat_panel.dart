@@ -9,8 +9,9 @@ import '../../../../domain/models/game_room.dart';
 import '../../../core/widgets/live_user_avatar.dart';
 import '../../../core/widgets/melow_avatar.dart';
 
-/// Live room chat feed supporting text + shared images + opponent's live profile photo.
-class RoomChatPanel extends StatelessWidget {
+/// Live room chat feed supporting text + shared images + opponent's live profile photo
+/// + in-room chat clear option.
+class RoomChatPanel extends StatefulWidget {
   const RoomChatPanel({
     super.key,
     required this.room,
@@ -24,11 +25,30 @@ class RoomChatPanel extends StatelessWidget {
   final Stream<List<ChatMessage>> messagesStream;
   final AppServices? services;
 
+  @override
+  State<RoomChatPanel> createState() => _RoomChatPanelState();
+}
+
+class _RoomChatPanelState extends State<RoomChatPanel> {
+  DateTime? _clearedBefore;
+
   String _formatTime(DateTime? dt) {
     if (dt == null) return 'just now';
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+
+  Future<void> _clearRoomChat() async {
+    setState(() => _clearedBefore = DateTime.now());
+    final svc = widget.services;
+    if (svc != null) {
+      await svc.game.clearRoomChatMessages(widget.room.code);
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Room chat cleared.')));
   }
 
   void _openImageViewer(BuildContext context, Uint8List bytes) {
@@ -57,9 +77,9 @@ class RoomChatPanel extends StatelessWidget {
   }
 
   Widget _buildUserAvatar(String uid, String fallbackAvatar, double size) {
-    if (services != null && uid.isNotEmpty) {
+    if (widget.services != null && uid.isNotEmpty) {
       return LiveUserAvatar(
-        services: services!,
+        services: widget.services!,
         uid: uid,
         fallbackAvatarId: fallbackAvatar,
         size: size,
@@ -71,6 +91,8 @@ class RoomChatPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final room = widget.room;
+    final currentUid = widget.currentUid;
     final scheme = Theme.of(context).colorScheme;
     final mySide = room.sideForUid(currentUid);
     final opponentUid = mySide == 'h' ? room.guestId : room.hostId;
@@ -109,13 +131,20 @@ class RoomChatPanel extends StatelessWidget {
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
+                const SizedBox(width: 4),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Clear Chat',
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+                  onPressed: _clearRoomChat,
+                ),
               ],
             ),
             const SizedBox(height: 8),
             SizedBox(
               height: 190,
               child: StreamBuilder<List<ChatMessage>>(
-                stream: messagesStream,
+                stream: widget.messagesStream,
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return Center(
@@ -129,7 +158,13 @@ class RoomChatPanel extends StatelessWidget {
                     return const Center(child: CircularProgressIndicator());
                   }
                   final items = snapshot.data!
-                      .where((msg) => !msg.isExpired())
+                      .where((msg) {
+                        if (msg.isExpired()) return false;
+                        if (_clearedBefore != null && msg.createdAt != null) {
+                          return msg.createdAt!.isAfter(_clearedBefore!);
+                        }
+                        return true;
+                      })
                       .toList(growable: false);
                   if (items.isEmpty) {
                     return Center(

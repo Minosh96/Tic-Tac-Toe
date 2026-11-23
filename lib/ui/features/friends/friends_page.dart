@@ -893,6 +893,21 @@ class _FriendsPageState extends State<FriendsPage> {
                                                             ),
                                                           );
                                                         } else if (action ==
+                                                            'clear_chat') {
+                                                          final chatId = widget
+                                                              .services.chat
+                                                              .chatIdFor(
+                                                            uid,
+                                                            f.friendUid,
+                                                          );
+                                                          await widget
+                                                              .services.chat
+                                                              .clearChat(
+                                                                  chatId);
+                                                          _snack(
+                                                            'Cleared chat with $liveName.',
+                                                          );
+                                                        } else if (action ==
                                                             'remove') {
                                                           await widget
                                                               .services.friends
@@ -906,7 +921,11 @@ class _FriendsPageState extends State<FriendsPage> {
                                                           await widget
                                                               .services.friends
                                                               .blockUser(
-                                                                  f.friendUid);
+                                                            f.friendUid,
+                                                            nickname: liveName,
+                                                            avatarId:
+                                                                liveAvatarId,
+                                                          );
                                                           _snack(
                                                             'Blocked $liveName.',
                                                           );
@@ -923,6 +942,11 @@ class _FriendsPageState extends State<FriendsPage> {
                                                           value: 'rivalry',
                                                           child: Text(
                                                               'View Rivalry'),
+                                                        ),
+                                                        PopupMenuItem(
+                                                          value: 'clear_chat',
+                                                          child: Text(
+                                                              'Clear Chat'),
                                                         ),
                                                         PopupMenuItem(
                                                           value: 'remove',
@@ -1087,6 +1111,120 @@ class _FriendsPageState extends State<FriendsPage> {
                               ],
                             );
                           },
+                        );
+                      },
+                    ),
+                    // Blocked Players Section with Unblock Action
+                    StreamBuilder<List<BlockedUserEntry>>(
+                      stream:
+                          widget.services.friends.watchBlockedUsers(uid),
+                      builder: (context, blockedSnap) {
+                        final blockedList = blockedSnap.data ?? const [];
+                        if (blockedList.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.block_rounded,
+                                  size: 18,
+                                  color: scheme.error,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Blocked Players (${blockedList.length})',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            for (final b in blockedList)
+                              LiveUserProfileBuilder(
+                                services: widget.services,
+                                uid: b.blockedUid,
+                                builder: (context, liveProfile) {
+                                  final liveName =
+                                      (liveProfile?.nickname.isNotEmpty ??
+                                              false)
+                                          ? liveProfile!.nickname
+                                          : b.nickname;
+                                  final liveAvatar =
+                                      liveProfile?.avatarId ?? b.avatarId;
+                                  final livePhoto = liveProfile?.photoBase64;
+                                  return Padding(
+                                    padding:
+                                        const EdgeInsets.only(bottom: 8),
+                                    child: Card(
+                                      child: ListTile(
+                                        leading: LiveUserAvatar(
+                                          services: widget.services,
+                                          uid: b.blockedUid,
+                                          fallbackAvatarId: liveAvatar,
+                                          fallbackPhotoBase64: livePhoto,
+                                          size: 42,
+                                        ),
+                                        title: Text(
+                                          liveName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        subtitle: const Text(
+                                          'Blocked • Tap Unblock to restore friend',
+                                          style: TextStyle(fontSize: 12),
+                                        ),
+                                        trailing: FilledButton.tonalIcon(
+                                          style: FilledButton.styleFrom(
+                                            minimumSize:
+                                                const Size(100, 38),
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                          ),
+                                          onPressed: () async {
+                                            try {
+                                              await widget.services.friends
+                                                  .unblockUser(
+                                                b.blockedUid,
+                                                nickname: liveName,
+                                                avatarId: liveAvatar,
+                                              );
+                                              _snack(
+                                                'Unblocked $liveName!',
+                                              );
+                                            } catch (e) {
+                                              _snack(
+                                                e
+                                                    .toString()
+                                                    .replaceFirst(
+                                                      'Exception: ',
+                                                      '',
+                                                    ),
+                                              );
+                                            }
+                                          },
+                                          icon: const Icon(
+                                            Icons.lock_open_rounded,
+                                            size: 16,
+                                          ),
+                                          label: const Text('Unblock'),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                          ],
                         );
                       },
                     ),

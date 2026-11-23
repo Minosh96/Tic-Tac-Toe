@@ -563,27 +563,12 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun startKeepAliveService() {
-        try {
-            val intent = Intent(this, MelowKeepAliveService::class.java).apply {
-                action = MelowKeepAliveService.ACTION_START
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                ContextCompat.startForegroundService(this, intent)
-            } else {
-                startService(intent)
-            }
-        } catch (_: Exception) {
-        }
+        // Foreground dataSync service removed to comply with Google Play policy.
+        // High-priority message & call notifications with wake locks remain active.
     }
 
     private fun stopKeepAliveService() {
-        try {
-            val intent = Intent(this, MelowKeepAliveService::class.java).apply {
-                action = MelowKeepAliveService.ACTION_STOP
-            }
-            startService(intent)
-        } catch (_: Exception) {
-        }
+        // No-op: Foreground dataSync service removed.
     }
 
     private fun wakeScreenBriefly(durationMs: Long) {

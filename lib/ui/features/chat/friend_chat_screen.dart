@@ -175,6 +175,51 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
     );
   }
 
+  Future<void> _confirmAndClearChat() async {
+    final chatId = _chatId;
+    if (chatId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear Chat?'),
+        content: Text(
+          'Are you sure you want to clear all messages in this chat with ${widget.friendName}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Clear Chat'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.services.chat.clearChat(chatId);
+      await PushNotificationService.cancelMessageNotification(chatId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Chat messages cleared.')),
+        );
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not clear chat: $e')),
+      );
+    }
+  }
+
   void _openFullImage(Uint8List bytes) {
     showDialog<void>(
       context: context,
@@ -249,7 +294,13 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
             icon: const Icon(Icons.call_rounded),
             onPressed: _startVoiceCall,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Clear Chat',
+            icon: const Icon(Icons.delete_sweep_rounded),
+            onPressed: _chatId == null ? null : _confirmAndClearChat,
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: SafeArea(

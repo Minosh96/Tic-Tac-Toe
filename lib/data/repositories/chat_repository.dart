@@ -22,6 +22,7 @@ class ChatRepository {
 
   final FirebaseFirestore _db;
   final FirebaseAuth _auth;
+  final Map<String, DateTime> _clearedAtByChatId = <String, DateTime>{};
 
   String get currentUid {
     final uid = _auth.currentUser?.uid;
@@ -101,11 +102,49 @@ class ChatRepository {
         .orderBy('createdAt', descending: true)
         .limit(80)
         .snapshots()
-        .map(
-          (snap) => snap.docs
-              .map(DirectChatMessage.fromFirestore)
-              .toList(growable: false),
-        );
+        .map((snap) {
+      final clearedAt = _clearedAtByChatId[chatId];
+      return snap.docs
+          .map(DirectChatMessage.fromFirestore)
+          .where((m) {
+            if (clearedAt == null) return true;
+            final created = m.createdAt;
+            return created != null && created.isAfter(clearedAt);
+          })
+          .toList(growable: false);
+    });
+  }
+
+  /// Clears all messages in a 1-on-1 direct chat thread and resets the preview.
+  Future<void> clearChat(String chatId) async {
+    final uid = currentUid;
+    _clearedAtByChatId[chatId] = DateTime.now();
+    final chatRef = _chatRef(chatId);
+
+    try {
+      final messagesSnap = await chatRef.collection('messages').get();
+      final docs = messagesSnap.docs;
+      const chunkSize = 400;
+      for (var i = 0; i < docs.length; i += chunkSize) {
+        final batch = _db.batch();
+        final end = (i + chunkSize < docs.length) ? i + chunkSize : docs.length;
+        for (var j = i; j < end; j++) {
+          batch.delete(docs[j].reference);
+        }
+        await batch.commit();
+      }
+    } catch (_) {}
+
+    try {
+      await chatRef.update({
+        'lastMessage': '',
+        'lastSenderUid': '',
+        'lastSenderName': '',
+        'unreadBy': FieldValue.arrayRemove([uid]),
+        'unreadCounts.$uid': 0,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
   }
 
   Future<void> markChatRead(String chatId) async {

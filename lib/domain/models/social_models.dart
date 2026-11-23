@@ -34,6 +34,37 @@ class FriendEntry {
   }
 }
 
+class BlockedUserEntry {
+  const BlockedUserEntry({
+    required this.blockedUid,
+    required this.nickname,
+    required this.avatarId,
+    this.createdAt,
+  });
+
+  final String blockedUid;
+  final String nickname;
+  final String avatarId;
+  final DateTime? createdAt;
+
+  factory BlockedUserEntry.fromFirestore(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    final rawName = (data['nickname'] as String?)?.trim() ?? '';
+    final rawAvatar = (data['avatarId'] as String?)?.trim() ?? '';
+    return BlockedUserEntry(
+      blockedUid:
+          data['blockedUid'] as String? ?? data['uid'] as String? ?? doc.id,
+      nickname: rawName.isNotEmpty ? rawName : 'Blocked Player',
+      avatarId: rawAvatar.isNotEmpty ? rawAvatar : 'fox',
+      createdAt: data['createdAt'] is Timestamp
+          ? (data['createdAt'] as Timestamp).toDate()
+          : null,
+    );
+  }
+}
+
 class FriendRequest {
   const FriendRequest({
     required this.id,

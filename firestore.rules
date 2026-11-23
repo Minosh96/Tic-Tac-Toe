@@ -958,7 +958,8 @@ service cloud.firestore {
         allow read: if roomExistsAndMember(roomId);
         allow create: if roomExistsAndMember(roomId) &&
           isValidChatMessage(request.resource.data);
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if roomExistsAndMember(roomId);
       }
 
       // 3. Ephemeral Room Reactions & Taunts
@@ -1309,7 +1310,8 @@ service cloud.firestore {
         allow read: if chatExistsAndParticipant(chatId);
         allow create: if chatExistsAndParticipant(chatId) &&
           isValidDirectMessage(request.resource.data);
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if chatExistsAndParticipant(chatId);
       }
     }
 

@@ -10,7 +10,7 @@ import {
   assertSucceeds,
   assertFails,
 } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, deleteDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 
 const PROJECT_ID = 'melow-tic-tac-toe-test';
 
@@ -137,5 +137,41 @@ test('Firestore Security Rules — Melow v2.0 invariants', async (t) => {
         createdAt: serverTimestamp(),
       })
     );
+  });
+
+  await t.test('allows room members and direct chat participants to delete messages (clear chat) while blocking non-participants and updates', async () => {
+    const roomMsgHostRef = doc(hostDb, 'rooms', 'ABC234', 'messages', 'm_clear');
+    await assertSucceeds(
+      setDoc(roomMsgHostRef, {
+        uid: 'host_uid',
+        text: 'Hello room',
+        createdAt: serverTimestamp(),
+        expireAt: Timestamp.fromMillis(Date.now() + 60_000),
+      })
+    );
+    await assertFails(updateDoc(roomMsgHostRef, { text: 'Edited' }));
+    await assertFails(deleteDoc(doc(strangerDb, 'rooms', 'ABC234', 'messages', 'm_clear')));
+    await assertSucceeds(deleteDoc(doc(guestDb, 'rooms', 'ABC234', 'messages', 'm_clear')));
+
+    const chatId = 'guest_uid__host_uid';
+    await assertSucceeds(
+      setDoc(doc(hostDb, 'chats', chatId), {
+        participants: ['guest_uid', 'host_uid'],
+        lastMessage: 'Hi',
+        lastSenderUid: 'host_uid',
+        updatedAt: serverTimestamp(),
+      })
+    );
+    const dmHostRef = doc(hostDb, 'chats', chatId, 'messages', 'dm_clear');
+    await assertSucceeds(
+      setDoc(dmHostRef, {
+        senderUid: 'host_uid',
+        text: 'Hi friend',
+        createdAt: serverTimestamp(),
+      })
+    );
+    await assertFails(updateDoc(dmHostRef, { text: 'Edited' }));
+    await assertFails(deleteDoc(doc(strangerDb, 'chats', chatId, 'messages', 'dm_clear')));
+    await assertSucceeds(deleteDoc(doc(guestDb, 'chats', chatId, 'messages', 'dm_clear')));
   });
 });

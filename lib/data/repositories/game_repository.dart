@@ -875,4 +875,17 @@ class GameRepository {
       ),
     });
   }
+
+  /// Clears all messages in the room chat subcollection.
+  Future<void> clearRoomChatMessages(String code) async {
+    try {
+      final snap = await _roomRef(code).collection('messages').get();
+      if (snap.docs.isEmpty) return;
+      final batch = _db.batch();
+      for (final d in snap.docs) {
+        batch.delete(d.reference);
+      }
+      await batch.commit();
+    } catch (_) {}
+  }
 }

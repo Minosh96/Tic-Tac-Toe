@@ -202,16 +202,89 @@ class FriendsRepository {
         .delete();
   }
 
-  Future<void> blockUser(String blockedUid) async {
+  Future<void> blockUser(
+    String blockedUid, {
+    String? nickname,
+    String? avatarId,
+  }) async {
     final uid = currentUid;
+    final trimmedName = nickname?.trim() ?? '';
+    final safeName = trimmedName.isNotEmpty
+        ? trimmedName.substring(0, trimmedName.length.clamp(0, 20))
+        : null;
+    final trimmedAvatar = avatarId?.trim() ?? '';
+    final safeAvatar = trimmedAvatar.isNotEmpty
+        ? trimmedAvatar.substring(0, trimmedAvatar.length.clamp(0, 32))
+        : null;
     final batch = _db.batch();
     batch.set(
       _db.collection('users').doc(uid).collection('blocked').doc(blockedUid),
-      {'blockedUid': blockedUid, 'createdAt': FieldValue.serverTimestamp()},
+      {
+        'blockedUid': blockedUid,
+        if (safeName != null) 'nickname': safeName,
+        if (safeAvatar != null) 'avatarId': safeAvatar,
+        'createdAt': FieldValue.serverTimestamp(),
+      },
     );
     batch.delete(
       _db.collection('users').doc(uid).collection('friends').doc(blockedUid),
     );
+    await batch.commit();
+  }
+
+  /// Streams all users currently blocked by [uid].
+  Stream<List<BlockedUserEntry>> watchBlockedUsers(String uid) {
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('blocked')
+        .snapshots()
+        .map((snap) {
+      final list = snap.docs
+          .map(BlockedUserEntry.fromFirestore)
+          .toList(growable: true);
+      list.sort(
+        (a, b) => (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+            .compareTo(
+          a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+      );
+      return list;
+    });
+  }
+
+  /// Unblocks [blockedUid] and optionally restores them to the user's friends list.
+  Future<void> unblockUser(
+    String blockedUid, {
+    String? nickname,
+    String? avatarId,
+    bool restoreFriend = true,
+  }) async {
+    final uid = currentUid;
+    final batch = _db.batch();
+    batch.delete(
+      _db.collection('users').doc(uid).collection('blocked').doc(blockedUid),
+    );
+    if (restoreFriend) {
+      final rawName = nickname?.trim() ?? '';
+      final safeName = (rawName.isNotEmpty && rawName != 'Blocked Player')
+          ? rawName.substring(0, rawName.length.clamp(0, 20))
+          : 'Friend';
+      final rawAvatar = avatarId?.trim() ?? '';
+      final safeAvatar = rawAvatar.isNotEmpty
+          ? rawAvatar.substring(0, rawAvatar.length.clamp(0, 32))
+          : 'fox';
+      batch.set(
+        _db.collection('users').doc(uid).collection('friends').doc(blockedUid),
+        {
+          'friendUid': blockedUid,
+          'nickname': safeName,
+          'avatarId': safeAvatar,
+          'since': FieldValue.serverTimestamp(),
+          'status': 'accepted',
+        },
+      );
+    }
     await batch.commit();
   }
 

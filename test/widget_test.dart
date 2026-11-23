@@ -264,14 +264,25 @@ void main() {
     expect(legacy.unreadCountFor('u2'), 1);
   });
 
-  testWidgets('AboutScreen shows v3.4 branding and Melow Labs credit', (
+  test('BlockedUserEntry stores blockedUid, nickname and avatarId', () {
+    const entry = BlockedUserEntry(
+      blockedUid: 'u_blocked',
+      nickname: 'RivalPlayer',
+      avatarId: 'panda',
+    );
+    expect(entry.blockedUid, 'u_blocked');
+    expect(entry.nickname, 'RivalPlayer');
+    expect(entry.avatarId, 'panda');
+  });
+
+  testWidgets('AboutScreen shows v3.4.1 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 3.4.0 (Build 10)'), findsOneWidget);
+    expect(find.text('Version 3.4.1 (Build 11)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,
