@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 3.8.1 (Build 17)',
+            'Version 3.9.0 (Build 18)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -39,13 +39,25 @@ class AboutScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'What’s New in Version 3.8',
+                    'What’s New in Version 3.9',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 10),
+                  const _Bullet(
+                    text: 'Auto-generated Group Tournament Fixtures (User1 vs User2) with private Room Codes visible only to the 2 match participants & end-of-tournament Champion 🥇 / Runner-Up 🥈 Summary',
+                  ),
+                  const _Bullet(
+                    text: 'Live Android notifications & in-app alerts for incoming Friend Requests & Match Challenges, with Mark Read & Erase All in Notifications',
+                  ),
+                  const _Bullet(
+                    text: 'Cancel pending Friend Requests directly on the Global Top 100 Ranks tab, plus Delete Profile & release username for reuse',
+                  ),
+                  const _Bullet(
+                    text: 'Expanded universal Avatar gallery with 8 new avatars and full Group Chat sender names & message controls',
+                  ),
                   const _Bullet(
                     text: 'Create a Friend Group with your own Friend Code (choose 2–5 max members) and share your code for friends to join & play',
                   ),

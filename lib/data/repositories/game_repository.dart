@@ -95,10 +95,15 @@ class GameRepository {
     required int bestOf,
     GameMode gameMode = GameMode.classic,
     String hostAvatar = 'astro',
+    String? preferredCode,
   }) async {
     final user = await ensureSignedIn();
     for (var attempt = 0; attempt < 8; attempt++) {
-      final code = GameEngine.generateRoomCode();
+      final code = (attempt == 0 &&
+              preferredCode != null &&
+              preferredCode.trim().length == 6)
+          ? preferredCode.trim().toUpperCase()
+          : GameEngine.generateRoomCode();
       try {
         await _db.runTransaction((tx) async {
           final ref = _roomRef(code);

@@ -417,7 +417,7 @@ class _SplashScreenState extends State<SplashScreen>
                               const MelowLogo(size: 110, borderRadius: 28),
                               const SizedBox(height: 18),
                               Text(
-                                'Welcome to Melow',
+                                'Melow Tic Tac Toe',
                                 textAlign: TextAlign.center,
                                 style: Theme.of(context)
                                     .textTheme

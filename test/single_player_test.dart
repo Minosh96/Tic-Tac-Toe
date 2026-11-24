@@ -1,11 +1,13 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:melow_tic_tac_toe/data/repositories/group_repository.dart';
 import 'package:melow_tic_tac_toe/data/repositories/profile_repository.dart';
 import 'package:melow_tic_tac_toe/data/repositories/single_player_repository.dart';
 import 'package:melow_tic_tac_toe/domain/bot_engine.dart';
 import 'package:melow_tic_tac_toe/domain/game_engine.dart';
 import 'package:melow_tic_tac_toe/domain/models/group_models.dart';
+import 'package:melow_tic_tac_toe/ui/core/widgets/melow_avatar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -350,6 +352,31 @@ void main() {
       expect(rankings[1].points, 7); // 2*3 + 1
       expect(rankings[2].nickname, 'Vishmika');
       expect(rankings[2].points, 4); // 1*3 + 1
+      expect(group.effectiveRunnerUpName, 'Minosh');
+    });
+
+    test('GroupRepository.buildFixturesForMembers generates round-robin fixtures and checks participant eligibility', () {
+      final fixtures = GroupRepository.buildFixturesForMembers(
+        memberUids: const ['u1', 'u2', 'u3'],
+        memberNames: const {'u1': 'User1', 'u2': 'User2', 'u3': 'User3'},
+        existingFixtures: const [],
+      );
+      expect(fixtures.length, 3);
+      expect(fixtures[0].player1Name, 'User1');
+      expect(fixtures[0].player2Name, 'User2');
+      expect(fixtures[0].isParticipant('u1'), isTrue);
+      expect(fixtures[0].isParticipant('u2'), isTrue);
+      expect(fixtures[0].isParticipant('u3'), isFalse);
+      expect(fixtures[0].roomId.length, 6);
+    });
+
+    test('melowAvatars contains only visible universal single-codepoint emojis and includes new avatars', () {
+      expect(melowAvatars.length, greaterThanOrEqualTo(18));
+      for (final avatar in melowAvatars) {
+        expect(avatar.emoji.isNotEmpty, isTrue);
+        expect(avatar.emoji, isNot('🥷'));
+        expect(avatar.emoji, isNot('🧑‍🚀'));
+      }
     });
   });
 }

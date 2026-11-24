@@ -210,6 +210,25 @@ class FriendsRepository {
     await batch.commit();
   }
 
+  /// Cancels or deletes a pending outgoing friend request sent to [targetUid].
+  Future<void> cancelOutgoingFriendRequestToUser(String targetUid) async {
+    final uid = currentUid;
+    final snap = await _db
+        .collection('friendRequests')
+        .where('senderUid', isEqualTo: uid)
+        .where('receiverUid', isEqualTo: targetUid)
+        .get();
+    for (final doc in snap.docs) {
+      try {
+        await doc.reference.delete();
+      } catch (_) {
+        try {
+          await doc.reference.update({'status': 'cancelled'});
+        } catch (_) {}
+      }
+    }
+  }
+
   Future<void> cancelFriendRequest(String requestId) async {
     await _db
         .collection('friendRequests')
@@ -436,10 +455,45 @@ class FriendsRepository {
   }
 
   Future<void> declineFriendChallenge(String challengeId) async {
-    await _db
-        .collection('friendChallenges')
-        .doc(challengeId)
-        .update({'status': 'declined'});
+    try {
+      await _db.collection('friendChallenges').doc(challengeId).delete();
+    } catch (_) {
+      await _db
+          .collection('friendChallenges')
+          .doc(challengeId)
+          .update({'status': 'declined'});
+    }
+  }
+
+  /// Erases / deletes an incoming or outgoing friend request document.
+  Future<void> eraseFriendRequest(String requestId) async {
+    try {
+      await _db.collection('friendRequests').doc(requestId).delete();
+    } catch (_) {
+      try {
+        await _db
+            .collection('friendRequests')
+            .doc(requestId)
+            .update({'status': 'declined'});
+      } catch (_) {}
+    }
+  }
+
+  /// Marks all notifications read and erases all incoming/outgoing challenges & requests.
+  Future<void> eraseAllRequestsAndChallenges({
+    required List<String> requestIds,
+    required List<String> incomingChallengeIds,
+    required List<String> outgoingChallengeIds,
+  }) async {
+    for (final id in requestIds) {
+      await eraseFriendRequest(id);
+    }
+    for (final id in incomingChallengeIds) {
+      await declineFriendChallenge(id);
+    }
+    if (outgoingChallengeIds.isNotEmpty) {
+      await clearAllSentChallenges(outgoingChallengeIds);
+    }
   }
 
   Future<void> cancelFriendChallenge(String challengeId) async {

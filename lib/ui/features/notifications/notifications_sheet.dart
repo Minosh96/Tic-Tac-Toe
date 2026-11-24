@@ -101,7 +101,7 @@ class NotificationsSheet extends StatelessWidget {
                                       if (total > 0)
                                         TextButton.icon(
                                           onPressed: () async {
-                                            // 1. Clear all unread messages & call logs in chats
+                                            // 1. Mark all unread chat messages as read & cancel system tray notifications
                                             final chatIds = unreadChats
                                                 .map((c) => c.chatId)
                                                 .toList(growable: false);
@@ -114,24 +114,30 @@ class NotificationsSheet extends StatelessWidget {
                                                         id);
                                               }
                                             }
-                                            // 2. Clear all accepted outgoing game challenges
-                                            if (acceptedOut.isNotEmpty) {
-                                              await services.friends
-                                                  .clearAllSentChallenges(
-                                                acceptedOut
-                                                    .map((c) => c.id)
-                                                    .toList(growable: false),
-                                              );
+                                            // 2. Erase all incoming & outgoing friend requests and game challenges
+                                            for (final req in requests) {
+                                              await PushNotificationService
+                                                  .cancelMessageNotification(
+                                                      'req_${req.id}');
                                             }
-                                            // 3. Dismiss/decline all incoming game challenges
                                             for (final c in challenges) {
-                                              try {
-                                                await services.friends
-                                                    .declineFriendChallenge(
-                                                        c.id);
-                                              } catch (_) {}
+                                              await PushNotificationService
+                                                  .cancelMessageNotification(
+                                                      'chal_${c.id}');
                                             }
-                                            // 4. Dismiss/decline all ringing voice call notifications
+                                            await services.friends
+                                                .eraseAllRequestsAndChallenges(
+                                              requestIds: requests
+                                                  .map((r) => r.id)
+                                                  .toList(growable: false),
+                                              incomingChallengeIds: challenges
+                                                  .map((c) => c.id)
+                                                  .toList(growable: false),
+                                              outgoingChallengeIds: acceptedOut
+                                                  .map((c) => c.id)
+                                                  .toList(growable: false),
+                                            );
+                                            // 3. Dismiss/decline all ringing voice call notifications
                                             for (final call in calls) {
                                               try {
                                                 await PushNotificationService
@@ -141,22 +147,14 @@ class NotificationsSheet extends StatelessWidget {
                                                     .declineCall(call.callId);
                                               } catch (_) {}
                                             }
-                                            // 5. Dismiss/decline pending friend requests
-                                            for (final req in requests) {
-                                              try {
-                                                await services.friends
-                                                    .respondFriendRequest(
-                                                  request: req,
-                                                  accept: false,
-                                                );
-                                              } catch (_) {}
-                                            }
                                           },
                                           icon: const Icon(
-                                            Icons.clear_all_rounded,
+                                            Icons.done_all_rounded,
                                             size: 18,
                                           ),
-                                          label: const Text('Clear All'),
+                                          label: const Text(
+                                            'Mark Read & Erase All',
+                                          ),
                                         ),
                                     ],
                                   ),
@@ -267,14 +265,18 @@ class NotificationsSheet extends StatelessWidget {
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               IconButton(
+                                                tooltip: 'Erase request',
                                                 icon: const Icon(
                                                   Icons.close_rounded,
                                                 ),
-                                                onPressed: () => services.friends
-                                                    .respondFriendRequest(
-                                                  request: req,
-                                                  accept: false,
-                                                ),
+                                                onPressed: () async {
+                                                  await PushNotificationService
+                                                      .cancelMessageNotification(
+                                                          'req_${req.id}');
+                                                  await services.friends
+                                                      .eraseFriendRequest(
+                                                          req.id);
+                                                },
                                               ),
                                               IconButton.filled(
                                                 icon: const Icon(
@@ -352,15 +354,19 @@ class NotificationsSheet extends StatelessWidget {
                                                 child: const Text('Play'),
                                               ),
                                               IconButton(
-                                                tooltip: 'Delete notification',
+                                                tooltip: 'Erase challenge',
                                                 icon: const Icon(
                                                   Icons.close_rounded,
                                                   size: 20,
                                                 ),
-                                                onPressed: () => services
-                                                    .friends
-                                                    .declineFriendChallenge(
-                                                        c.id),
+                                                onPressed: () async {
+                                                  await PushNotificationService
+                                                      .cancelMessageNotification(
+                                                          'chal_${c.id}');
+                                                  await services.friends
+                                                      .declineFriendChallenge(
+                                                          c.id);
+                                                },
                                               ),
                                             ],
                                           ),

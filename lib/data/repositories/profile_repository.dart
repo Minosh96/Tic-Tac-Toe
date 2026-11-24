@@ -177,6 +177,36 @@ class ProfileRepository {
     await _auth.signOut();
   }
 
+  /// Deletes the current user's registered account and releases their registered
+  /// username (`username@players.melowlabs.app`) in Firebase Auth so that username
+  /// becomes immediately reusable by any user!
+  Future<UserProfile> deleteRegisteredProfileAndReleaseUsername({
+    required PreferencesController preferences,
+    required ChatRepository chatRepository,
+    SinglePlayerRepository? singlePlayerRepository,
+    String? password,
+  }) async {
+    final user = _auth.currentUser;
+    if (user != null &&
+        !user.isAnonymous &&
+        password != null &&
+        password.isNotEmpty) {
+      final email = user.email;
+      if (email != null && email.isNotEmpty) {
+        try {
+          await user.reauthenticateWithCredential(
+            EmailAuthProvider.credential(email: email, password: password),
+          );
+        } catch (_) {}
+      }
+    }
+    return permanentlyDeleteAccountAndCreateNew(
+      preferences: preferences,
+      chatRepository: chatRepository,
+      singlePlayerRepository: singlePlayerRepository,
+    );
+  }
+
   Future<UserProfile> ensureProfile() async {
     final uid = currentUid;
     final ref = _userRef(uid);

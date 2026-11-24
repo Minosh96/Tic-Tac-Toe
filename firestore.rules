@@ -957,8 +957,8 @@ service cloud.firestore {
       return d.keys().hasOnly([
           'name', 'creatorUid', 'hostFriendCode', 'maxMembers',
           'memberUids', 'memberNames', 'memberAvatars',
-          'tournamentStatus', 'championUid', 'championName', 'cupName',
-          'activeMatch', 'winsByUid', 'lossesByUid', 'drawsByUid', 'cupsByUid',
+          'tournamentStatus', 'championUid', 'championName', 'runnerUpUid', 'runnerUpName', 'cupName',
+          'fixtures', 'activeMatch', 'winsByUid', 'lossesByUid', 'drawsByUid', 'cupsByUid',
           'lastMessage', 'lastSenderUid', 'lastSenderName', 'lastMessageAt',
           'clearedAtBy', 'createdAt', 'updatedAt'
         ]) &&
@@ -977,7 +977,10 @@ service cloud.firestore {
         d.tournamentStatus in ['active', 'final_ready', 'completed'] &&
         isOptionalNullableString(d, 'championUid', 0, 128) &&
         isOptionalNullableString(d, 'championName', 0, 20) &&
+        isOptionalNullableString(d, 'runnerUpUid', 0, 128) &&
+        isOptionalNullableString(d, 'runnerUpName', 0, 20) &&
         isOptionalNullableString(d, 'cupName', 0, 80) &&
+        (!('fixtures' in d) || d.fixtures == null || (d.fixtures is list && d.fixtures.size() <= 15)) &&
         isOptionalNullableBoundedMap(d, 'activeMatch', 15) &&
         isOptionalNullableBoundedMap(d, 'winsByUid', 5) &&
         isOptionalNullableBoundedMap(d, 'lossesByUid', 5) &&
@@ -1546,25 +1549,33 @@ service cloud.firestore {
     // ===============================================================
 
     match /groups/{groupId} {
-      allow get: if signedIn();
-      allow list: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow read: if signedIn();
 
       allow create: if signedIn() &&
         isValidGroup(request.resource.data) &&
         request.resource.data.creatorUid == request.auth.uid &&
         request.auth.uid in request.resource.data.memberUids;
 
-      allow update: if signedIn() &&
-        isValidGroup(request.resource.data) &&
-        request.resource.data.creatorUid == resource.data.creatorUid && (
-          request.auth.uid in resource.data.memberUids ||
-          (
-            request.auth.uid in request.resource.data.memberUids &&
-            resource.data.memberUids.size() < resource.data.get('maxMembers', 5)
+      allow update: if signedIn()
+        && isValidGroup(request.resource.data)
+        && (
+          request.auth.uid in resource.data.memberUids
+          || request.auth.uid == resource.data.creatorUid
+          || (
+            request.auth.uid in request.resource.data.memberUids
+            && request.resource.data.memberUids.size() <= resource.data.maxMembers
+          )
+          || (
+            request.resource.data.creatorUid == request.auth.uid
+            && request.auth.uid in request.resource.data.memberUids
           )
         );
 
-      allow delete: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow delete: if signedIn()
+        && (
+          request.auth.uid in resource.data.memberUids
+          || request.auth.uid == resource.data.creatorUid
+        );
 
       match /messages/{messageId} {
         allow read: if groupExistsAndMember(groupId);

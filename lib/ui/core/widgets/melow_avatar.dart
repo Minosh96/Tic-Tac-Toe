@@ -18,8 +18,10 @@ class AvatarOption {
   final Color color;
 }
 
+/// Built-in playful avatar choices using 100% universal Unicode 6.0–9.0 emojis
+/// guaranteed to render on every Android device (no missing-glyph boxes!).
 const List<AvatarOption> melowAvatars = [
-  AvatarOption(id: 'astro', emoji: '🧑‍🚀', label: 'Astro', color: Color(0xFF8B5CF6)),
+  AvatarOption(id: 'astro', emoji: '🚀', label: 'Astro', color: Color(0xFF8B5CF6)),
   AvatarOption(id: 'boy', emoji: '👦', label: 'Boy', color: Color(0xFF3B82F6)),
   AvatarOption(id: 'girl', emoji: '👧', label: 'Girl', color: Color(0xFFEC4899)),
   AvatarOption(id: 'fox', emoji: '🦊', label: 'Fox', color: Color(0xFFF97316)),
@@ -31,8 +33,16 @@ const List<AvatarOption> melowAvatars = [
   AvatarOption(id: 'lion', emoji: '🦁', label: 'Lion', color: Color(0xFFF59E0B)),
   AvatarOption(id: 'unicorn', emoji: '🦄', label: 'Spark', color: Color(0xFFD946EF)),
   AvatarOption(id: 'clown', emoji: '🤡', label: 'Jester', color: Color(0xFFEF4444)),
-  AvatarOption(id: 'ninja', emoji: '🥷', label: 'Ninja', color: Color(0xFF475569)),
+  AvatarOption(id: 'ninja', emoji: '😎', label: 'Cool', color: Color(0xFF475569)),
   AvatarOption(id: 'crown', emoji: '👑', label: 'Royal', color: Color(0xFFEAB308)),
+  AvatarOption(id: 'alien', emoji: '👽', label: 'Alien', color: Color(0xFF14B8A6)),
+  AvatarOption(id: 'ghost', emoji: '👻', label: 'Ghost', color: Color(0xFFA855F7)),
+  AvatarOption(id: 'tiger', emoji: '🐯', label: 'Tiger', color: Color(0xFFEA580C)),
+  AvatarOption(id: 'penguin', emoji: '🐧', label: 'Penguin', color: Color(0xFF0284C7)),
+  AvatarOption(id: 'koala', emoji: '🐨', label: 'Koala', color: Color(0xFF4F46E5)),
+  AvatarOption(id: 'cowboy', emoji: '🤠', label: 'Ranger', color: Color(0xFFD97706)),
+  AvatarOption(id: 'prince', emoji: '🤴', label: 'Prince', color: Color(0xFF2563EB)),
+  AvatarOption(id: 'princess', emoji: '👸', label: 'Princess', color: Color(0xFFDB2777)),
 ];
 
 AvatarOption avatarById(String id) {

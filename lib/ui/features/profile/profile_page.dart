@@ -273,6 +273,90 @@ class _ProfilePageState extends State<ProfilePage> {
     passCtrl.dispose();
   }
 
+  Future<void> _openDeleteProfileReleaseUsernameDialog(
+    UserProfile profile,
+  ) async {
+    final passCtrl = TextEditingController();
+    bool busy = false;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return AlertDialog(
+            title: const Text('Delete Profile?'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    profile.isRegisteredAccount
+                        ? 'This will permanently delete your profile, stats, friends, and chats, and release the username "@${profile.registeredUsername}" so it can be used again by any user.'
+                        : 'This will permanently delete your profile, stats, friends, and chats, and start fresh with a brand-new profile.',
+                  ),
+                  if (profile.isRegisteredAccount) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: passCtrl,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Confirm Password (optional if recent)',
+                        prefixIcon: Icon(Icons.lock_outline_rounded),
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: busy ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: scheme.error,
+                  foregroundColor: scheme.onError,
+                ),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        setDialogState(() => busy = true);
+                        try {
+                          final fresh = await widget.services.profile
+                              .deleteRegisteredProfileAndReleaseUsername(
+                            preferences: widget.services.preferences,
+                            chatRepository: widget.services.chat,
+                            singlePlayerRepository:
+                                widget.services.singlePlayer,
+                            password: passCtrl.text.trim(),
+                          );
+                          LiveUserProfileBuilder.cache.clear();
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          _snack(
+                            'Profile deleted and username released. Started fresh as ${fresh.nickname}!',
+                          );
+                          if (mounted) setState(() {});
+                        } catch (e) {
+                          _snack(
+                            e.toString().replaceFirst('Exception: ', ''),
+                          );
+                          if (ctx.mounted) setDialogState(() => busy = false);
+                        }
+                      },
+                icon: const Icon(Icons.delete_forever_rounded, size: 18),
+                label: Text(busy ? 'Deleting…' : 'Delete Profile'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    passCtrl.dispose();
+  }
+
   Future<void> _openEditProfileSheet(UserProfile profile) async {
     final nameCtrl = TextEditingController(text: profile.nickname);
     String avatarId = profile.avatarId;
@@ -636,17 +720,40 @@ class _ProfilePageState extends State<ProfilePage> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  TextButton.icon(
-                                    onPressed: () =>
-                                        _openRegisterOrLoginDialog(
-                                      profile: profile,
-                                      isRegister: false,
-                                    ),
-                                    icon: const Icon(
-                                      Icons.swap_horiz_rounded,
-                                      size: 18,
-                                    ),
-                                    label: const Text('Switch / Login Account'),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    alignment: WrapAlignment.center,
+                                    children: [
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            _openRegisterOrLoginDialog(
+                                          profile: profile,
+                                          isRegister: false,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.swap_horiz_rounded,
+                                          size: 18,
+                                        ),
+                                        label: const Text(
+                                          'Switch / Login Account',
+                                        ),
+                                      ),
+                                      TextButton.icon(
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: scheme.error,
+                                        ),
+                                        onPressed: () =>
+                                            _openDeleteProfileReleaseUsernameDialog(
+                                          profile,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.delete_forever_rounded,
+                                          size: 18,
+                                        ),
+                                        label: const Text('Delete Profile'),
+                                      ),
+                                    ],
                                   ),
                                 ] else ...[
                                   Wrap(
@@ -682,6 +789,21 @@ class _ProfilePageState extends State<ProfilePage> {
                                           'Login Existing User',
                                         ),
                                       ),
+                                      if (profile != null)
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: scheme.error,
+                                          ),
+                                          onPressed: () =>
+                                              _openDeleteProfileReleaseUsernameDialog(
+                                            profile,
+                                          ),
+                                          icon: const Icon(
+                                            Icons.delete_outline_rounded,
+                                            size: 18,
+                                          ),
+                                          label: const Text('Delete Profile'),
+                                        ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -693,8 +815,8 @@ class _ProfilePageState extends State<ProfilePage> {
                                     ),
                                   ),
                                 ],
-                                const SizedBox(height: 4),
-                                TextButton.icon(
+                                const SizedBox(height: 6),
+                                OutlinedButton.icon(
                                   onPressed: () async {
                                     await widget.services.profile
                                         .signOutToLogin();
@@ -710,9 +832,14 @@ class _ProfilePageState extends State<ProfilePage> {
                                   },
                                   icon: const Icon(
                                     Icons.logout_rounded,
-                                    size: 16,
+                                    size: 18,
                                   ),
-                                  label: const Text('Return to Login Screen'),
+                                  label: const Text(
+                                    'Log Out',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -1019,7 +1146,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         Card(
                           child: ListTile(
                             leading: const Icon(Icons.info_outline_rounded),
-                            title: const Text('About Melow Tic Tac Toe v3.8.1'),
+                            title: const Text('About Melow Tic Tac Toe v3.9'),
                             trailing: const Icon(Icons.chevron_right_rounded),
                             onTap: () => Navigator.push(
                               context,

@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Individual member standing inside a Friend Group (up to 5 members).
+/// Individual member standing inside a Friend Group (2 to 5 members).
 class GroupMemberStanding {
   const GroupMemberStanding({
     required this.uid,
@@ -25,7 +25,106 @@ class GroupMemberStanding {
   int get points => (wins * 3) + draws;
 }
 
-/// Active or completed 1v1 match inside a Friend Group (qualifying match or Final Match).
+/// A single tournament fixture match inside a Friend Group (`User1 vs User2`).
+/// The roomCode and Play button are shown ONLY to the two participants (`player1Uid` and `player2Uid`)!
+class GroupFixture {
+  const GroupFixture({
+    required this.id,
+    required this.matchNumber,
+    required this.player1Uid,
+    required this.player1Name,
+    required this.player2Uid,
+    required this.player2Name,
+    this.roomId = '',
+    this.status = 'pending', // 'pending' | 'playing' | 'finished'
+    this.winnerUid = '',
+    this.winnerName = '',
+    this.resultText = '',
+    this.isFinalMatch = false,
+  });
+
+  final String id;
+  final int matchNumber;
+  final String player1Uid;
+  final String player1Name;
+  final String player2Uid;
+  final String player2Name;
+  final String roomId;
+  final String status; // 'pending' | 'playing' | 'finished'
+  final String winnerUid;
+  final String winnerName;
+  final String resultText;
+  final bool isFinalMatch;
+
+  bool isParticipant(String uid) => uid == player1Uid || uid == player2Uid;
+
+  String get statusLabel {
+    if (status == 'finished') {
+      if (resultText.isNotEmpty) return resultText;
+      if (winnerName.isNotEmpty) return 'Winner: $winnerName 🏆';
+      return 'Draw';
+    }
+    if (status == 'playing') return 'Playing';
+    return 'Ready to Play';
+  }
+
+  GroupFixture copyWith({
+    String? roomId,
+    String? status,
+    String? winnerUid,
+    String? winnerName,
+    String? resultText,
+  }) {
+    return GroupFixture(
+      id: id,
+      matchNumber: matchNumber,
+      player1Uid: player1Uid,
+      player1Name: player1Name,
+      player2Uid: player2Uid,
+      player2Name: player2Name,
+      roomId: roomId ?? this.roomId,
+      status: status ?? this.status,
+      winnerUid: winnerUid ?? this.winnerUid,
+      winnerName: winnerName ?? this.winnerName,
+      resultText: resultText ?? this.resultText,
+      isFinalMatch: isFinalMatch,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'matchNumber': matchNumber,
+        'player1Uid': player1Uid,
+        'player1Name': player1Name,
+        'player2Uid': player2Uid,
+        'player2Name': player2Name,
+        'roomId': roomId,
+        'status': status,
+        'winnerUid': winnerUid,
+        'winnerName': winnerName,
+        'resultText': resultText,
+        'isFinalMatch': isFinalMatch,
+      };
+
+  factory GroupFixture.fromMap(Map<String, dynamic> map) {
+    return GroupFixture(
+      id: map['id'] as String? ?? 'M1',
+      matchNumber: (map['matchNumber'] as num?)?.toInt() ?? 1,
+      player1Uid: map['player1Uid'] as String? ?? '',
+      player1Name: map['player1Name'] as String? ?? 'Player 1',
+      player2Uid: map['player2Uid'] as String? ?? '',
+      player2Name: map['player2Name'] as String? ?? 'Player 2',
+      roomId: map['roomId'] as String? ?? '',
+      status: map['status'] as String? ?? 'pending',
+      winnerUid: map['winnerUid'] as String? ?? '',
+      winnerName: map['winnerName'] as String? ?? '',
+      resultText: map['resultText'] as String? ?? '',
+      isFinalMatch: map['isFinalMatch'] == true,
+    );
+  }
+}
+
+/// Active or completed 1v1 match inside a Friend Group (kept for legacy compatibility).
 class GroupActiveMatch {
   const GroupActiveMatch({
     required this.roomId,
@@ -51,7 +150,7 @@ class GroupActiveMatch {
   final int boardSize;
   final int bestOf;
   final bool isFinalMatch;
-  final String status; // 'pending' | 'playing' | 'finished'
+  final String status;
   final String winnerUid;
   final String winnerName;
 
@@ -88,8 +187,9 @@ class GroupActiveMatch {
   }
 }
 
-/// Friend Group (up to 5 members added via Friend Codes) supporting
-/// 2-player matches, Final Championship Match for the Melow Challenge Champion Cup,
+/// Friend Group (2 to 5 members joining via host's Friend Code) with
+/// auto-generated tournament fixtures, participant-only room code visibility,
+/// Final Match for the Melow Challenge Champion Cup, Champion & Runner-Up summary,
 /// Group Individual Rankings, Group Chat, and Group Voice Calls.
 class FriendGroup {
   const FriendGroup({
@@ -104,7 +204,10 @@ class FriendGroup {
     required this.tournamentStatus,
     this.championUid = '',
     this.championName = '',
+    this.runnerUpUid = '',
+    this.runnerUpName = '',
     this.cupName = 'Melow Challenge Champion Cup',
+    this.fixtures = const <GroupFixture>[],
     this.activeMatch,
     this.winsByUid = const <String, int>{},
     this.lossesByUid = const <String, int>{},
@@ -131,7 +234,10 @@ class FriendGroup {
   final String tournamentStatus; // 'active' | 'final_ready' | 'completed'
   final String championUid;
   final String championName;
+  final String runnerUpUid;
+  final String runnerUpName;
   final String cupName;
+  final List<GroupFixture> fixtures;
   final GroupActiveMatch? activeMatch;
   final Map<String, int> winsByUid;
   final Map<String, int> lossesByUid;
@@ -177,6 +283,16 @@ class FriendGroup {
     return list;
   }
 
+  /// Resolved Runner-Up name from either explicit `runnerUpName` or 2nd place in rankings.
+  String get effectiveRunnerUpName {
+    if (runnerUpName.trim().isNotEmpty) return runnerUpName;
+    final r = rankings;
+    for (final s in r) {
+      if (s.uid != championUid) return s.nickname;
+    }
+    return r.length >= 2 ? r[1].nickname : '';
+  }
+
   factory FriendGroup.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
@@ -212,6 +328,18 @@ class FriendGroup {
       }
     }
 
+    final rawFixtures = d['fixtures'];
+    final fixtureList = <GroupFixture>[];
+    if (rawFixtures is List) {
+      for (final item in rawFixtures) {
+        if (item is Map) {
+          fixtureList.add(
+            GroupFixture.fromMap(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+    }
+
     final rawMatch = d['activeMatch'];
     final active = rawMatch is Map
         ? GroupActiveMatch.fromMap(Map<String, dynamic>.from(rawMatch))
@@ -229,7 +357,10 @@ class FriendGroup {
       tournamentStatus: d['tournamentStatus'] as String? ?? 'active',
       championUid: d['championUid'] as String? ?? '',
       championName: d['championName'] as String? ?? '',
+      runnerUpUid: d['runnerUpUid'] as String? ?? '',
+      runnerUpName: d['runnerUpName'] as String? ?? '',
       cupName: d['cupName'] as String? ?? 'Melow Challenge Champion Cup',
+      fixtures: fixtureList,
       activeMatch: active,
       winsByUid: parseIntMap(d['winsByUid']),
       lossesByUid: parseIntMap(d['lossesByUid']),
@@ -238,13 +369,12 @@ class FriendGroup {
       lastMessage: d['lastMessage'] as String? ?? '',
       lastSenderUid: d['lastSenderUid'] as String? ?? '',
       lastSenderName: d['lastSenderName'] as String? ?? '',
-      lastMessageAt: d['lastMessageAt'] is Timestamp
-          ? (d['lastMessageAt'] as Timestamp).toDate()
-          : null,
+      lastMessageAt: dataTimestamp(d['lastMessageAt']),
       clearedAtBy: clearedMap,
-      createdAt: d['createdAt'] is Timestamp
-          ? (d['createdAt'] as Timestamp).toDate()
-          : null,
+      createdAt: dataTimestamp(d['createdAt']),
     );
   }
+
+  static DateTime? dataTimestamp(dynamic raw) =>
+      raw is Timestamp ? raw.toDate() : null;
 }

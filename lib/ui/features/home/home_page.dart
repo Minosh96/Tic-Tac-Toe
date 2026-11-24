@@ -644,21 +644,11 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        // Quick Actions Row — uniform height & scaleDown text!
+                        // Quick Actions Row — Join Room & Challenge Friends (Multiplayer button above opens Create Room)
                         IntrinsicHeight(
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Expanded(
-                                child: _QuickActionCard(
-                                  icon: Icons.add_box_rounded,
-                                  color: AppTheme.purpleAccent,
-                                  title: 'Create Room',
-                                  subtitle: 'Classic / Blitz',
-                                  onTap: () => _openCreateRoomSheet(profile),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
                               Expanded(
                                 child: _QuickActionCard(
                                   icon: Icons.vpn_key_rounded,
@@ -668,13 +658,13 @@ class _HomePageState extends State<HomePage> {
                                   onTap: () => _openJoinRoomSheet(profile),
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: _QuickActionCard(
                                   icon: Icons.groups_rounded,
                                   color: AppTheme.goldAccent,
                                   title: 'Challenge',
-                                  subtitle: 'Play friends',
+                                  subtitle: 'Play friends & groups',
                                   onTap: () => widget.onNavigateTab(1),
                                 ),
                               ),

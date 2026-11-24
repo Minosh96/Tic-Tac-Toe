@@ -133,6 +133,21 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
     }
   }
 
+  Future<void> _cancelFriendRequestToGlobalUser(
+    LeaderboardEntry entry,
+  ) async {
+    try {
+      await widget.services.friends
+          .cancelOutgoingFriendRequestToUser(entry.uid);
+      if (mounted) {
+        setState(() => _sentRequestUids.remove(entry.uid));
+      }
+      _snack('Cancelled friend request to ${entry.publicNickname}.');
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
   String _medal(int rank) {
     if (rank == 1) return '🥇';
     if (rank == 2) return '🥈';
@@ -318,6 +333,10 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                                                 me,
                                                 _entries[i],
                                               ),
+                                      onCancelRequest: () =>
+                                          _cancelFriendRequestToGlobalUser(
+                                        _entries[i],
+                                      ),
                                     ),
                                   ),
                                 if (_hasMore)
@@ -361,6 +380,7 @@ class _LeaderboardRow extends StatelessWidget {
     required this.isRequestPending,
     required this.showAddFriendControl,
     this.onAddFriend,
+    this.onCancelRequest,
   });
 
   final String rankLabel;
@@ -371,6 +391,7 @@ class _LeaderboardRow extends StatelessWidget {
   final bool isRequestPending;
   final bool showAddFriendControl;
   final VoidCallback? onAddFriend;
+  final VoidCallback? onCancelRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -435,12 +456,23 @@ class _LeaderboardRow extends StatelessWidget {
                   ),
                 )
               else if (isRequestPending)
-                Tooltip(
-                  message: 'Friend Request Pending',
-                  child: Icon(
-                    Icons.hourglass_top_rounded,
-                    size: 20,
-                    color: scheme.onSurfaceVariant,
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: scheme.error,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                  ),
+                  onPressed: onCancelRequest,
+                  icon: const Icon(Icons.close_rounded, size: 15),
+                  label: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 )
               else if (entry.allowFriendRequests)

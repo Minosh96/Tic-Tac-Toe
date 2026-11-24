@@ -33,12 +33,18 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   StreamSubscription<List<DirectChatSummary>>? _chatNotifSub;
   StreamSubscription<List<VoiceCallSession>>? _callNotifSub;
+  StreamSubscription<List<FriendRequest>>? _friendReqNotifSub;
+  StreamSubscription<List<FriendChallenge>>? _challengeNotifSub;
   StreamSubscription<User?>? _authSub;
   String _activeUid = '';
 
   bool _chatsSeeded = false;
+  bool _reqsSeeded = false;
+  bool _challengesSeeded = false;
   final Map<String, DateTime?> _lastNotifiedMsgAt = <String, DateTime?>{};
   final Set<String> _activeRingingCallIds = <String>{};
+  final Set<String> _notifiedRequestIds = <String>{};
+  final Set<String> _notifiedChallengeIds = <String>{};
 
   @override
   void initState() {
@@ -52,9 +58,15 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         _activeUid = nextUid;
         _chatNotifSub?.cancel();
         _callNotifSub?.cancel();
+        _friendReqNotifSub?.cancel();
+        _challengeNotifSub?.cancel();
         _chatsSeeded = false;
+        _reqsSeeded = false;
+        _challengesSeeded = false;
         _lastNotifiedMsgAt.clear();
         _activeRingingCallIds.clear();
+        _notifiedRequestIds.clear();
+        _notifiedChallengeIds.clear();
         LiveUserProfileBuilder.cache.clear();
         _initNotifications();
         if (mounted) setState(() {});
@@ -125,6 +137,82 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         ..clear()
         ..addAll(currentIds);
     });
+
+    // Live notifications for incoming Friend Requests!
+    _friendReqNotifSub =
+        widget.services.friends.watchIncomingRequests(uid).listen((requests) {
+      if (!_reqsSeeded) {
+        _reqsSeeded = true;
+        for (final r in requests) {
+          _notifiedRequestIds.add(r.id);
+        }
+        return;
+      }
+      for (final r in requests) {
+        if (_notifiedRequestIds.add(r.id)) {
+          widget.services.sound.play(SoundEffect.click);
+          PushNotificationService.showMessageNotification(
+            chatId: 'req_${r.id}',
+            senderName: '👋 Friend Request',
+            messagePreview: '${r.senderName} sent you a friend request!',
+            unreadCount: 1,
+          );
+          if (mounted && _appInForeground) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: Text('👋 ${r.senderName} sent you a friend request!'),
+                  action: SnackBarAction(
+                    label: 'View',
+                    onPressed: () => _goToTab(1),
+                  ),
+                ),
+              );
+          }
+        }
+      }
+    });
+
+    // Live notifications for incoming Game Challenges!
+    _challengeNotifSub = widget.services.friends
+        .watchIncomingChallenges(uid)
+        .listen((challenges) {
+      if (!_challengesSeeded) {
+        _challengesSeeded = true;
+        for (final c in challenges) {
+          _notifiedChallengeIds.add(c.id);
+        }
+        return;
+      }
+      for (final c in challenges) {
+        if (_notifiedChallengeIds.add(c.id)) {
+          widget.services.sound.play(SoundEffect.click);
+          PushNotificationService.showMessageNotification(
+            chatId: 'chal_${c.id}',
+            senderName: '⚔️ Match Challenge',
+            messagePreview:
+                '${c.senderName} challenged you to a ${c.boardSize}×${c.boardSize} match!',
+            unreadCount: 1,
+          );
+          if (mounted && _appInForeground) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '⚔️ ${c.senderName} challenged you to a match!',
+                  ),
+                  action: SnackBarAction(
+                    label: 'View',
+                    onPressed: () => _goToTab(1),
+                  ),
+                ),
+              );
+          }
+        }
+      }
+    });
   }
 
   @override
@@ -138,6 +226,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     _authSub?.cancel();
     _chatNotifSub?.cancel();
     _callNotifSub?.cancel();
+    _friendReqNotifSub?.cancel();
+    _challengeNotifSub?.cancel();
     super.dispose();
   }
 

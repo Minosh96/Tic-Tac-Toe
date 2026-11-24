@@ -638,32 +638,75 @@ class _FriendsPageState extends State<FriendsPage> {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    // Friend Groups Section (Create Group with My Code or Join Group by Code)
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            '🏆 Friend Groups (2–5 Players)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
+                    // Unified "Create Group" Card with Join Group & Create New Group buttons + description
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Text('🏟️', style: TextStyle(fontSize: 24)),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Create Group (Tournament & Chat)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Create a group (2–5 players) using your Friend Code or enter a friend’s code to join their group tournament, play fixtures, and chat!',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: me == null
+                                        ? null
+                                        : () => _openJoinGroupByCodeDialog(me),
+                                    icon: const Icon(
+                                      Icons.vpn_key_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text('Join Group'),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    onPressed: me == null
+                                        ? null
+                                        : () => _openCreateGroupDialog(me),
+                                    icon: const Icon(
+                                      Icons.group_add_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text('Create New Group'),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        if (me != null) ...[
-                          OutlinedButton.icon(
-                            onPressed: () => _openJoinGroupByCodeDialog(me),
-                            icon: const Icon(Icons.vpn_key_rounded, size: 16),
-                            label: const Text('Join Group'),
-                          ),
-                          const SizedBox(width: 6),
-                          FilledButton.tonalIcon(
-                            onPressed: () => _openCreateGroupDialog(me),
-                            icon: const Icon(Icons.group_add_rounded, size: 18),
-                            label: const Text('Create'),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     StreamBuilder<List<FriendGroup>>(
@@ -671,25 +714,7 @@ class _FriendsPageState extends State<FriendsPage> {
                       builder: (context, groupSnap) {
                         final groups = groupSnap.data ?? const [];
                         if (groups.isEmpty) {
-                          return Card(
-                            child: ListTile(
-                              leading: const Text(
-                                '🏟️',
-                                style: TextStyle(fontSize: 28),
-                              ),
-                              title: const Text(
-                                'Create or Join a Friend Group with Your Code',
-                                style: TextStyle(fontWeight: FontWeight.w800),
-                              ),
-                              subtitle: const Text(
-                                'Create a group with your Friend Code (choose 2 to 5 max members) and share your code for friends to join and play for the Melow Challenge Champion Cup!',
-                              ),
-                              trailing: const Icon(Icons.chevron_right_rounded),
-                              onTap: me == null
-                                  ? null
-                                  : () => _openCreateGroupDialog(me),
-                            ),
-                          );
+                          return const SizedBox.shrink();
                         }
                         return Column(
                           children: [
@@ -713,7 +738,7 @@ class _FriendsPageState extends State<FriendsPage> {
                                       g.tournamentStatus == 'completed' &&
                                               g.championName.isNotEmpty
                                           ? 'Champion: ${g.championName} 🏆 • ${g.memberUids.length}/${g.maxMembers} Members'
-                                          : '${g.memberUids.length}/${g.maxMembers} Members • ${g.lastMessage.isNotEmpty ? g.lastMessage : g.cupName}',
+                                          : '${g.memberUids.length}/${g.maxMembers} Members • ${g.fixtures.length} Fixtures',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
