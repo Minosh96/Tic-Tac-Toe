@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../../../core/services/app_services.dart';
 import '../../../core/services/image_helper.dart';
 import '../../../domain/achievements_catalog.dart';
+import '../../../domain/bot_engine.dart';
 import '../../../domain/game_engine.dart';
+import '../../../domain/models/single_player_models.dart';
 import '../../../domain/models/social_models.dart';
 import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
@@ -15,8 +17,11 @@ import '../../core/widgets/melow_avatar.dart';
 import '../about/about_screen.dart';
 import '../settings/settings_screen.dart';
 
-/// Melow v3.0 Player Profile with Gallery Photo Selection, 100+ Emoji Picker &
-/// fixed responsive Stat Cards.
+/// Melow v3.6 Player Profile displaying Player Identity, Summary of Games
+/// (Online Multiplayer Arena + Single Player vs System + Per-Difficulty Records),
+/// Milestone Progress, and Recent Match History.
+/// All privacy, profile reset, and account deletion settings live inside the
+/// toothed-wheel SettingsScreen right after the pen edit icon.
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, required this.services});
 
@@ -55,168 +60,6 @@ class _ProfilePageState extends State<ProfilePage> {
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
     }
-  }
-
-  Future<void> _openDeleteOrResetProfileDialog(UserProfile profile) async {
-    bool deletePhoto = true;
-    bool deleteName = true;
-    bool busy = false;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final scheme = Theme.of(ctx).colorScheme;
-          return AlertDialog(
-            title: const Text('Delete / Reset Profile'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Select which profile items to delete and reset back to the default system profile (${profile.defaultSystemNickname}). Deleted items will immediately stop showing globally and to other players.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: deleteName,
-                    onChanged: busy
-                        ? null
-                        : (v) => setDialogState(() => deleteName = v ?? true),
-                    title: const Text(
-                      'Delete Custom Name',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      'Revert to default system name (${profile.defaultSystemNickname})',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: deletePhoto,
-                    onChanged: busy
-                        ? null
-                        : (v) => setDialogState(() => deletePhoto = v ?? true),
-                    title: const Text(
-                      'Delete Profile Picture',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: const Text(
-                      'Remove gallery photo & revert to default avatar',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: busy ? null : () => Navigator.pop(ctx),
-                child: const Text('Cancel'),
-              ),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: scheme.error,
-                  foregroundColor: scheme.onError,
-                ),
-                onPressed: (busy || (!deleteName && !deletePhoto))
-                    ? null
-                    : () async {
-                        setDialogState(() => busy = true);
-                        try {
-                          await widget.services.profile.deleteOrResetProfile(
-                            deleteName: deleteName,
-                            deletePhoto: deletePhoto,
-                          );
-                          LiveUserProfileBuilder.cache.remove(profile.uid);
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          _snack(
-                            deleteName && deletePhoto
-                                ? 'Profile reset to default system profile (${profile.defaultSystemNickname}).'
-                                : deleteName
-                                    ? 'Name reset to ${profile.defaultSystemNickname}.'
-                                    : 'Profile picture deleted.',
-                          );
-                        } catch (e) {
-                          _snack(
-                            e.toString().replaceFirst('Exception: ', ''),
-                          );
-                        } finally {
-                          if (ctx.mounted) setDialogState(() => busy = false);
-                        }
-                      },
-                icon: const Icon(Icons.delete_forever_rounded, size: 18),
-                label: Text(busy ? 'Resetting…' : 'Delete Selected'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Future<void> _openPermanentDeleteAccountDialog() async {
-    bool busy = false;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final scheme = Theme.of(ctx).colorScheme;
-          return AlertDialog(
-            title: const Text('Permanently Delete Account?'),
-            content: const Text(
-              'This will permanently delete your account, friends, chats, notifications, trophies, match stats, and all settings, and start fresh with a brand-new default profile.\n\nThis action cannot be undone.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: busy ? null : () => Navigator.pop(ctx),
-                child: const Text('Cancel'),
-              ),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: scheme.error,
-                  foregroundColor: scheme.onError,
-                ),
-                onPressed: busy
-                    ? null
-                    : () async {
-                        setDialogState(() => busy = true);
-                        try {
-                          final fresh = await widget.services.profile
-                              .permanentlyDeleteAccountAndCreateNew(
-                            preferences: widget.services.preferences,
-                            chatRepository: widget.services.chat,
-                          );
-                          LiveUserProfileBuilder.cache.clear();
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          _snack(
-                            'Account permanently deleted. Started fresh as ${fresh.nickname}!',
-                          );
-                          if (mounted) setState(() {});
-                        } catch (e) {
-                          _snack(
-                            e.toString().replaceFirst('Exception: ', ''),
-                          );
-                        } finally {
-                          if (ctx.mounted) setDialogState(() => busy = false);
-                        }
-                      },
-                icon: const Icon(Icons.no_accounts_rounded, size: 18),
-                label: Text(
-                  busy ? 'Deleting Account…' : 'Permanently Delete Account',
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
   }
 
   Future<void> _openEditProfileSheet(UserProfile profile) async {
@@ -558,7 +401,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                 Text(
                                   profile?.createdAt != null
                                       ? 'Joined ${profile!.createdAt!.toLocal().toString().substring(0, 10)}'
-                                      : 'Anonymous Firebase Player',
+                                      : 'Anonymous Melow Player',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: scheme.onSurfaceVariant,
@@ -568,259 +411,23 @@ class _ProfilePageState extends State<ProfilePage> {
                             ),
                           ),
                         ),
-                        if (profile != null) ...[
-                          const SizedBox(height: 14),
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.shield_outlined,
-                                        size: 20,
-                                        color: scheme.primary,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Expanded(
-                                        child: Text(
-                                          'Profile Privacy & Visibility',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 15,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Control who can see your whole profile (including your profile picture & name):',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: SegmentedButton<ProfileVisibility>(
-                                      showSelectedIcon: false,
-                                      segments: const [
-                                        ButtonSegment(
-                                          value: ProfileVisibility.public,
-                                          icon: Icon(
-                                            Icons.public_rounded,
-                                            size: 16,
-                                          ),
-                                          label: FittedBox(
-                                            fit: BoxFit.scaleDown,
-                                            child: Text('Public'),
-                                          ),
-                                        ),
-                                        ButtonSegment(
-                                          value: ProfileVisibility.friends,
-                                          icon: Icon(
-                                            Icons.group_rounded,
-                                            size: 16,
-                                          ),
-                                          label: FittedBox(
-                                            fit: BoxFit.scaleDown,
-                                            child: Text('Friends Only'),
-                                          ),
-                                        ),
-                                        ButtonSegment(
-                                          value: ProfileVisibility.private,
-                                          icon: Icon(
-                                            Icons.lock_outline_rounded,
-                                            size: 16,
-                                          ),
-                                          label: FittedBox(
-                                            fit: BoxFit.scaleDown,
-                                            child: Text('Private'),
-                                          ),
-                                        ),
-                                      ],
-                                      selected: {profile.profileVisibility},
-                                      onSelectionChanged: (values) async {
-                                        final chosen = values.first;
-                                        try {
-                                          await widget.services.profile
-                                              .updateProfile(
-                                            nickname: profile.nickname,
-                                            avatarId: profile.avatarId,
-                                            preferredEmoji:
-                                                profile.preferredEmoji,
-                                            publicProfileEnabled: chosen ==
-                                                ProfileVisibility.public,
-                                            leaderboardOptIn:
-                                                profile.leaderboardOptIn,
-                                            profileVisibility: chosen,
-                                            hidePhotoGlobally:
-                                                profile.hidePhotoGlobally,
-                                            hideNameGlobally:
-                                                profile.hideNameGlobally,
-                                          );
-                                          LiveUserProfileBuilder.cache
-                                              .remove(profile.uid);
-                                          _snack(
-                                            'Profile visibility set to ${chosen.label}.',
-                                          );
-                                        } catch (e) {
-                                          _snack(
-                                            e.toString().replaceFirst(
-                                                  'Exception: ',
-                                                  '',
-                                                ),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    profile.profileVisibility.description,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: scheme.primary,
-                                    ),
-                                  ),
-                                  const Divider(height: 20),
-                                  SwitchListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    dense: true,
-                                    title: const Text(
-                                      'Hide Profile Picture Globally',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    subtitle: const Text(
-                                      'Never show your custom gallery photo in global rankings',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                    value: !profile.isPublic ||
-                                        profile.hidePhotoGlobally,
-                                    onChanged: !profile.isPublic
-                                        ? null
-                                        : (v) async {
-                                            await widget.services.profile
-                                                .updateProfile(
-                                              nickname: profile.nickname,
-                                              avatarId: profile.avatarId,
-                                              preferredEmoji:
-                                                  profile.preferredEmoji,
-                                              publicProfileEnabled:
-                                                  profile.isPublic,
-                                              leaderboardOptIn:
-                                                  profile.leaderboardOptIn,
-                                              profileVisibility:
-                                                  profile.profileVisibility,
-                                              hidePhotoGlobally: v,
-                                              hideNameGlobally:
-                                                  profile.hideNameGlobally,
-                                            );
-                                            LiveUserProfileBuilder.cache
-                                                .remove(profile.uid);
-                                          },
-                                  ),
-                                  SwitchListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    dense: true,
-                                    title: const Text(
-                                      'Hide Custom Name Globally',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    subtitle: Text(
-                                      'Show default system name (${profile.defaultSystemNickname}) in global rankings',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    value: !profile.isPublic ||
-                                        profile.hideNameGlobally,
-                                    onChanged: !profile.isPublic
-                                        ? null
-                                        : (v) async {
-                                            await widget.services.profile
-                                                .updateProfile(
-                                              nickname: profile.nickname,
-                                              avatarId: profile.avatarId,
-                                              preferredEmoji:
-                                                  profile.preferredEmoji,
-                                              publicProfileEnabled:
-                                                  profile.isPublic,
-                                              leaderboardOptIn:
-                                                  profile.leaderboardOptIn,
-                                              profileVisibility:
-                                                  profile.profileVisibility,
-                                              hidePhotoGlobally:
-                                                  profile.hidePhotoGlobally,
-                                              hideNameGlobally: v,
-                                            );
-                                            LiveUserProfileBuilder.cache
-                                                .remove(profile.uid);
-                                          },
-                                  ),
-                                  const SizedBox(height: 8),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: scheme.error,
-                                        side: BorderSide(
-                                          color: scheme.error
-                                              .withValues(alpha: 0.6),
-                                        ),
-                                      ),
-                                      onPressed: () =>
-                                          _openDeleteOrResetProfileDialog(
-                                              profile),
-                                      icon: const Icon(
-                                        Icons.person_off_rounded,
-                                        size: 18,
-                                      ),
-                                      label: const Text(
-                                        'Reset Name / Photo to System Default',
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: FilledButton.icon(
-                                      style: FilledButton.styleFrom(
-                                        backgroundColor: scheme.error,
-                                        foregroundColor: scheme.onError,
-                                      ),
-                                      onPressed:
-                                          _openPermanentDeleteAccountDialog,
-                                      icon: const Icon(
-                                        Icons.no_accounts_rounded,
-                                        size: 18,
-                                      ),
-                                      label: const Text(
-                                        'Permanently Delete Account & All Data',
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                        const SizedBox(height: 16),
+                        // Section 1: Online Multiplayer Summary
+                        const Text(
+                          'Online Multiplayer Summary',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
                           ),
-                        ],
-                        const SizedBox(height: 14),
-                        // Responsive Stat Grid (no text clipping!)
+                        ),
+                        const SizedBox(height: 8),
                         GridView.count(
                           crossAxisCount: 3,
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           mainAxisSpacing: 10,
                           crossAxisSpacing: 10,
-                          childAspectRatio: 1.0,
+                          childAspectRatio: 1.05,
                           children: [
                             _StatTile(
                               label: 'Played',
@@ -830,6 +437,11 @@ class _ProfilePageState extends State<ProfilePage> {
                               label: 'Wins',
                               value: '${stats.wins}',
                               accent: Colors.green,
+                            ),
+                            _StatTile(
+                              label: 'Losses / Draws',
+                              value: '${stats.losses} / ${stats.draws}',
+                              accent: scheme.error,
                             ),
                             _StatTile(
                               label: 'Win Rate',
@@ -842,17 +454,127 @@ class _ProfilePageState extends State<ProfilePage> {
                               accent: AppTheme.goldAccent,
                             ),
                             _StatTile(
-                              label: 'Streak',
-                              value: '${stats.currentStreak} 🔥',
-                            ),
-                            _StatTile(
-                              label: 'Best Streak',
-                              value: '${stats.bestStreak}',
+                              label: 'Streak / Best',
+                              value:
+                                  '${stats.currentStreak}🔥 / ${stats.bestStreak}',
                               accent: AppTheme.purpleAccent,
                             ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        // Section 2: Single Player (vs System) Summary
+                        ListenableBuilder(
+                          listenable: widget.services.singlePlayer,
+                          builder: (context, _) {
+                            final solo = widget.services.singlePlayer.stats;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Single Player (vs System) Summary',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.purpleAccent
+                                            .withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Text(
+                                        '🤖 Offline & Solo',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppTheme.purpleAccent,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                GridView.count(
+                                  crossAxisCount: 3,
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  mainAxisSpacing: 10,
+                                  crossAxisSpacing: 10,
+                                  childAspectRatio: 1.05,
+                                  children: [
+                                    _StatTile(
+                                      label: 'Solo Games',
+                                      value: '${solo.totalGames}',
+                                    ),
+                                    _StatTile(
+                                      label: 'Wins',
+                                      value: '${solo.wins}',
+                                      accent: Colors.green,
+                                    ),
+                                    _StatTile(
+                                      label: 'Losses / Draws',
+                                      value: '${solo.losses} / ${solo.draws}',
+                                      accent: scheme.error,
+                                    ),
+                                    _StatTile(
+                                      label: 'Win Rate',
+                                      value:
+                                          '${solo.winPercentage.toStringAsFixed(0)}%',
+                                      accent: AppTheme.cyanAccent,
+                                    ),
+                                    _StatTile(
+                                      label: 'Solo Cups',
+                                      value: '${solo.soloCups} 🏆',
+                                      accent: AppTheme.goldAccent,
+                                    ),
+                                    _StatTile(
+                                      label: 'Streak / Best',
+                                      value:
+                                          '${solo.currentStreak}🔥 / ${solo.bestStreak}',
+                                      accent: AppTheme.purpleAccent,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(14),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Record by System Difficulty',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        for (final diff in BotDifficulty.values)
+                                          _DifficultyBreakdownRow(
+                                            difficulty: diff,
+                                            stats: solo.statsFor(diff),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                         const SizedBox(height: 14),
+                        // Next Milestone
                         StreamBuilder<List<UserAchievement>>(
                           stream:
                               widget.services.profile.watchAchievements(uid),
@@ -921,51 +643,96 @@ class _ProfilePageState extends State<ProfilePage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        StreamBuilder<List<MatchSummary>>(
-                          stream:
-                              widget.services.profile.watchRecentMatches(uid),
-                          builder: (context, matchSnap) {
-                            final matches = matchSnap.data ?? const [];
-                            if (matches.isEmpty) {
-                              return Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(20),
-                                  child: Text(
-                                    'Completed multiplayer tournaments will appear here.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }
-                            return Column(
-                              children: [
-                                for (final m in matches)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: Card(
-                                      child: ListTile(
-                                        leading: Text(
-                                          m.finalWinnerUid == uid ? '🏆' : '🎮',
-                                          style: const TextStyle(fontSize: 24),
-                                        ),
-                                        title: Text(
-                                          m.finalWinnerUid == uid
-                                              ? 'Victory (${m.hostWins} - ${m.guestWins})'
-                                              : 'Match (${m.hostWins} - ${m.guestWins})',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          '${GameMode.fromId(m.gameMode).label} • ${m.boardSize}×${m.boardSize}',
+                        // Combined Recent Match History (Solo & Online Multiplayer)
+                        ListenableBuilder(
+                          listenable: widget.services.singlePlayer,
+                          builder: (context, _) {
+                            final soloHistory = widget
+                                .services.singlePlayer.history
+                                .take(5)
+                                .toList(growable: false);
+                            return StreamBuilder<List<MatchSummary>>(
+                              stream: widget.services.profile
+                                  .watchRecentMatches(uid),
+                              builder: (context, matchSnap) {
+                                final matches = matchSnap.data ?? const [];
+                                if (matches.isEmpty && soloHistory.isEmpty) {
+                                  return Card(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(20),
+                                      child: Text(
+                                        'Completed Single Player and Multiplayer games will appear here.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: scheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ),
-                                  ),
-                              ],
+                                  );
+                                }
+                                return Column(
+                                  children: [
+                                    for (final s in soloHistory)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 8),
+                                        child: Card(
+                                          child: ListTile(
+                                            leading: Text(
+                                              s.result == 'win'
+                                                  ? '🏆'
+                                                  : (s.result == 'draw'
+                                                      ? '🤝'
+                                                      : '🤖'),
+                                              style:
+                                                  const TextStyle(fontSize: 24),
+                                            ),
+                                            title: Text(
+                                              s.result == 'win'
+                                                  ? 'Solo Victory vs System (${s.playerScore} - ${s.systemScore})'
+                                                  : s.result == 'draw'
+                                                      ? 'Solo Draw vs System (${s.playerScore} - ${s.systemScore})'
+                                                      : 'Solo Match vs System (${s.playerScore} - ${s.systemScore})',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                            subtitle: Text(
+                                              '${BotDifficulty.fromId(s.difficulty).label} • ${SinglePlayerMode.fromId(s.mode).label} • ${s.boardSize}×${s.boardSize}',
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    for (final m in matches)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 8),
+                                        child: Card(
+                                          child: ListTile(
+                                            leading: Text(
+                                              m.finalWinnerUid == uid
+                                                  ? '🏆'
+                                                  : '🎮',
+                                              style:
+                                                  const TextStyle(fontSize: 24),
+                                            ),
+                                            title: Text(
+                                              m.finalWinnerUid == uid
+                                                  ? 'Online Victory (${m.hostWins} - ${m.guestWins})'
+                                                  : 'Online Match (${m.hostWins} - ${m.guestWins})',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                            subtitle: Text(
+                                              '${GameMode.fromId(m.gameMode).label} • ${m.boardSize}×${m.boardSize}',
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                );
+                              },
                             );
                           },
                         ),
@@ -973,7 +740,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         Card(
                           child: ListTile(
                             leading: const Icon(Icons.info_outline_rounded),
-                            title: const Text('About Melow Tic Tac Toe v3.4'),
+                            title: const Text('About Melow Tic Tac Toe v3.6'),
                             trailing: const Icon(Icons.chevron_right_rounded),
                             onTap: () => Navigator.push(
                               context,
@@ -993,6 +760,44 @@ class _ProfilePageState extends State<ProfilePage> {
           },
         );
       },
+    );
+  }
+}
+
+class _DifficultyBreakdownRow extends StatelessWidget {
+  const _DifficultyBreakdownRow({
+    required this.difficulty,
+    required this.stats,
+  });
+
+  final BotDifficulty difficulty;
+  final DifficultyStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Text(difficulty.badge, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              difficulty.label,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
+          ),
+          Text(
+            '${stats.wins}W • ${stats.losses}L • ${stats.draws}D',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1022,7 +827,7 @@ class _StatTile extends StatelessWidget {
                 value,
                 maxLines: 1,
                 style: TextStyle(
-                  fontSize: 19,
+                  fontSize: 18,
                   fontWeight: FontWeight.w900,
                   color: accent,
                 ),

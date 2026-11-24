@@ -5,6 +5,7 @@ import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
 import '../../core/widgets/melow_logo.dart';
 import '../shell/main_shell.dart';
+import '../single_player/single_player_setup_sheet.dart';
 
 /// Branded animated splash & Firebase bootstrap gate.
 class SplashScreen extends StatefulWidget {
@@ -53,8 +54,10 @@ class _SplashScreenState extends State<SplashScreen>
     });
     try {
       await widget.services.preferences.loadLocal();
+      await widget.services.singlePlayer.loadLocalAndSync();
       await widget.services.game.ensureSignedIn();
       await widget.services.profile.ensureProfile();
+      await widget.services.singlePlayer.loadLocalAndSync();
       try {
         final cloudPrefs =
             await widget.services.profile.fetchPrivatePreferences();
@@ -69,7 +72,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (!mounted) return;
       setState(() {
         _error = 'Unable to connect to Melow servers. '
-            'Check your internet connection and try again.';
+            'You can still play Single Player vs System offline!';
       });
     }
   }
@@ -118,7 +121,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'Version 3.0 • Play • Chat • Call • Win',
+                          'Version 3.6 • Solo • Multiplayer • Chat • Call',
                           style: TextStyle(
                             color: scheme.onSurfaceVariant,
                             fontWeight: FontWeight.w500,
@@ -148,12 +151,34 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                       const SizedBox(height: 16),
                       SizedBox(
-                        width: 200,
+                        width: 240,
                         child: FilledButton.icon(
                           onPressed: _bootstrap,
                           icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Retry'),
+                          label: const Text('Retry Online Connection'),
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: 240,
+                        child: FilledButton.tonalIcon(
+                          onPressed: () {
+                            showModalBottomSheet<void>(
+                              context: context,
+                              isScrollControlled: true,
+                              builder: (_) => SinglePlayerSetupSheet(
+                                services: widget.services,
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.smart_toy_rounded),
+                          label: const Text('Play Single Player (Offline)'),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextButton(
+                        onPressed: () => setState(() => _ready = true),
+                        child: const Text('Enter App in Offline Mode'),
                       ),
                     ],
                   ),

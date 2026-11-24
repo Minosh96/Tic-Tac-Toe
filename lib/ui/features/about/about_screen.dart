@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 3.5.0 (Build 13)',
+            'Version 3.6.0 (Build 14)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -39,13 +39,25 @@ class AboutScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'What’s New in Version 3.0',
+                    'What’s New in Version 3.6',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 10),
+                  const _Bullet(
+                    text: 'Offline-ready Single Player (Player vs System) mode with Easy, Normal, Hard & Impossible difficulties',
+                  ),
+                  const _Bullet(
+                    text: 'Classic, Tournament (BO3/5/7) & Blitz (5s) solo modes with Practice Hints & Undo',
+                  ),
+                  const _Bullet(
+                    text: 'Separate Single Player Statistics, difficulty breakdown, Solo Cups & 8 Solo Achievements',
+                  ),
+                  const _Bullet(
+                    text: 'Streamlined Player Profile tab featuring Online & Solo Game Summaries',
+                  ),
                   const _Bullet(
                     text: 'Instant Melow Cup trophies, achievements & stats sync after every tournament win',
                   ),

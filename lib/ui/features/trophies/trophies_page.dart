@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/services/app_services.dart';
 import '../../../domain/achievements_catalog.dart';
+import '../../../domain/models/single_player_models.dart';
 import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
@@ -208,6 +209,50 @@ class _TrophiesPageState extends State<TrophiesPage> {
                                   record: map[def.id],
                                   tierColor: _tierColor(def.tier),
                                 ),
+                            const SizedBox(height: 16),
+                            ListenableBuilder(
+                              listenable: widget.services.singlePlayer,
+                              builder: (context, _) {
+                                final solo =
+                                    widget.services.singlePlayer.stats;
+                                final soloAchievements = widget
+                                    .services.singlePlayer.achievements;
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Expanded(
+                                          child: Text(
+                                            'Solo Mode Achievements',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          '🏆 ${solo.soloCups} Solo Cups',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppTheme.goldAccent,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    for (final def in soloAchievementsCatalog)
+                                      _AchievementTile(
+                                        definition: def,
+                                        record: soloAchievements[def.id],
+                                        tierColor: _tierColor(def.tier),
+                                      ),
+                                  ],
+                                );
+                              },
+                            ),
                             const MelowFooter(),
                           ],
                         ),

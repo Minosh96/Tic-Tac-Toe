@@ -8,6 +8,7 @@ import '../../domain/game_engine.dart';
 import '../../domain/models/social_models.dart';
 import '../../domain/models/user_profile.dart';
 import 'chat_repository.dart';
+import 'single_player_repository.dart';
 
 /// Manages player profile (including gallery photo), preferences, stats, achievements & trophies.
 class ProfileRepository {
@@ -27,11 +28,7 @@ class ProfileRepository {
   final FirebaseFirestore _db;
   final FirebaseAuth _auth;
 
-  String get currentUid {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) throw StateError('Not signed in');
-    return uid;
-  }
+  String get currentUid => _auth.currentUser?.uid ?? 'offline_player';
 
   DocumentReference<Map<String, dynamic>> _userRef(String uid) =>
       _db.collection('users').doc(uid);
@@ -293,11 +290,12 @@ class ProfileRepository {
   }
 
   /// Permanently deletes the current user's account, friends, chats, notifications,
-  /// trophies, stats, and settings, then signs in as a brand-new anonymous player
-  /// profile (`Player_XXXX`) without affecting other existing user profiles.
+  /// trophies, stats, single-player data, and settings, then signs in as a brand-new
+  /// anonymous player profile (`Player_XXXX`) without affecting other existing user profiles.
   Future<UserProfile> permanentlyDeleteAccountAndCreateNew({
     required PreferencesController preferences,
     required ChatRepository chatRepository,
+    SinglePlayerRepository? singlePlayerRepository,
   }) async {
     final uid = currentUid;
     final userRef = _userRef(uid);
@@ -427,9 +425,10 @@ class ProfileRepository {
       await userRef.delete();
     } catch (_) {}
 
-    // 8. Reset all local settings & caches
+    // 8. Reset all local settings, single-player stats/history, & caches
     chatRepository.resetLocalCaches();
     await preferences.resetAllSettingsToDefault();
+    await singlePlayerRepository?.clearAllSoloData(deleteCloud: false);
 
     // 9. Delete Firebase Auth user (or sign out) and sign in with a brand-new anonymous UID
     try {

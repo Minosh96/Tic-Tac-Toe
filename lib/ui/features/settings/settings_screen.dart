@@ -293,15 +293,82 @@ class SettingsScreen extends StatelessWidget {
                                       Theme.of(context).colorScheme.error,
                                 ),
                                 onPressed: () async {
+                                  bool deleteName = true;
+                                  bool deletePhoto = true;
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => StatefulBuilder(
+                                      builder: (ctx, setDialogState) =>
+                                          AlertDialog(
+                                        title: const Text(
+                                          'Reset Name / Photo',
+                                        ),
+                                        content: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            CheckboxListTile(
+                                              contentPadding: EdgeInsets.zero,
+                                              value: deleteName,
+                                              onChanged: (v) => setDialogState(
+                                                  () => deleteName = v ?? true),
+                                              title: const Text(
+                                                'Reset Custom Name',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              subtitle: Text(
+                                                'Revert to ${profile.defaultSystemNickname}',
+                                              ),
+                                            ),
+                                            CheckboxListTile(
+                                              contentPadding: EdgeInsets.zero,
+                                              value: deletePhoto,
+                                              onChanged: (v) => setDialogState(
+                                                  () =>
+                                                      deletePhoto = v ?? true),
+                                              title: const Text(
+                                                'Delete Profile Picture',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              subtitle: const Text(
+                                                'Remove custom gallery photo',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          FilledButton(
+                                            onPressed: (!deleteName &&
+                                                    !deletePhoto)
+                                                ? null
+                                                : () =>
+                                                    Navigator.pop(ctx, true),
+                                            child: const Text(
+                                              'Reset Selected',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                  if (confirmed != true) return;
                                   await services.profile.deleteOrResetProfile(
-                                    deleteName: true,
-                                    deletePhoto: true,
+                                    deleteName: deleteName,
+                                    deletePhoto: deletePhoto,
                                   );
                                   if (!context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
-                                        'Profile reset to default system name (${profile.defaultSystemNickname}).',
+                                        'Profile reset to default system settings (${profile.defaultSystemNickname}).',
                                       ),
                                     ),
                                   );
@@ -364,6 +431,8 @@ class SettingsScreen extends StatelessWidget {
                                       .permanentlyDeleteAccountAndCreateNew(
                                     preferences: services.preferences,
                                     chatRepository: services.chat,
+                                    singlePlayerRepository:
+                                        services.singlePlayer,
                                   );
                                   if (!context.mounted) return;
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -395,7 +464,7 @@ class SettingsScreen extends StatelessWidget {
                     child: ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('About Melow Tic Tac Toe'),
-                      subtitle: const Text('Version 3.5.0 • Melow Labs'),
+                      subtitle: const Text('Version 3.6.0 • Melow Labs'),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => Navigator.push(
                         context,

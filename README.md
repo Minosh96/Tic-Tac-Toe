@@ -1,8 +1,16 @@
-# 🎮 Melow Tic Tac Toe — Version 2.0
+# 🎮 Melow Tic Tac Toe — Version 3.6.0
 
-A polished, social, real-time multiplayer emoji Tic-Tac-Toe game for Android built with **Flutter**, **Firebase Authentication**, **Cloud Firestore (Enterprise Native Mode)**, and **Firebase Cloud Functions**.
+A polished, social, real-time multiplayer and offline single-player emoji Tic-Tac-Toe game for Android built with **Flutter**, **Firebase Authentication**, **Cloud Firestore (Enterprise Native Mode)**, and **Firebase Cloud Functions**.
 
 Developed at **Melow Labs** • Repository: [Minosh96/Tic-Tac-Toe](https://github.com/Minosh96/Tic-Tac-Toe)
+
+---
+
+## What’s New in Version 3.6.0 (`v3.6.0+14`)
+- **Single Player Mode (Player vs System)**: Play 100% offline against a dedicated local `BotEngine` across **Easy**, **Normal**, **Hard**, and **Impossible** difficulty levels (full Alpha-Beta Minimax on `3×3`, move-ordered heuristic search on `4×4–6×6`, executed in a background isolate).
+- **Rich Solo Configuration**: Supports Classic, Tournament (`Best of 3`, `5`, `7`), and Blitz (`5s`) modes, `3×3–6×6` board sizes, First Player choice (`Player`, `System`, `Random`), universal emojis, and Practice Mode (`Hint` & `Undo`).
+- **Separate Solo Statistics & 8 Solo Achievements**: Tracks Total Games, Wins, Losses, Draws, Solo Cups, Streak, Best Streak, Win %, per-difficulty records, and match history locally (with optional cloud backup) without affecting Global Top 100 online rankings.
+- **Streamlined Profile Tab**: Displays Player Identity, Online Multiplayer Summary, Single Player vs System Summary, and Recent Match History, keeping all privacy and account controls cleanly inside Settings (`⚙️`).
 
 ---
 

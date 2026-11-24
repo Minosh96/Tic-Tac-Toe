@@ -4,11 +4,12 @@ import '../../data/repositories/game_repository.dart';
 import '../../data/repositories/leaderboard_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/rivalry_repository.dart';
+import '../../data/repositories/single_player_repository.dart';
 import '../../data/repositories/voice_call_repository.dart';
 import 'preferences_controller.dart';
 import 'sound_service.dart';
 
-/// Single dependency container wiring all Melow v3.0 repositories & services.
+/// Single dependency container wiring all Melow v3.6 repositories & services.
 class AppServices {
   AppServices({
     required this.preferences,
@@ -20,7 +21,8 @@ class AppServices {
     required this.leaderboard,
     required this.chat,
     required this.voiceCall,
-  });
+    SinglePlayerRepository? singlePlayer,
+  }) : singlePlayer = singlePlayer ?? SinglePlayerRepository();
 
   factory AppServices.production({String databaseId = 'melow-game'}) {
     final preferences = PreferencesController();
@@ -35,6 +37,7 @@ class AppServices {
     final leaderboard = LeaderboardRepository(databaseId: databaseId);
     final chat = ChatRepository(databaseId: databaseId);
     final voiceCall = VoiceCallRepository(databaseId: databaseId);
+    final singlePlayer = SinglePlayerRepository(databaseId: databaseId);
 
     preferences.onCloudSync = (prefs) => profile.savePrivatePreferences(prefs);
 
@@ -48,6 +51,7 @@ class AppServices {
       leaderboard: leaderboard,
       chat: chat,
       voiceCall: voiceCall,
+      singlePlayer: singlePlayer,
     );
   }
 
@@ -60,9 +64,11 @@ class AppServices {
   final LeaderboardRepository leaderboard;
   final ChatRepository chat;
   final VoiceCallRepository voiceCall;
+  final SinglePlayerRepository singlePlayer;
 
   Future<void> dispose() async {
     await sound.dispose();
     preferences.dispose();
+    singlePlayer.dispose();
   }
 }

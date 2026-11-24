@@ -17,6 +17,7 @@ import '../chat/friend_chat_screen.dart';
 import '../notifications/notifications_sheet.dart';
 import '../room/room_page.dart';
 import '../settings/settings_screen.dart';
+import '../single_player/single_player_setup_sheet.dart';
 
 /// Melow v3.0 Gaming Dashboard with fixed mobile text alignment, unified
 /// live Notification Bell Center, and 100+ categorized Emoji Picker.
@@ -50,6 +51,18 @@ class _HomePageState extends State<HomePage> {
       builder: (_) => NotificationsSheet(
         services: widget.services,
         me: profile,
+      ),
+    );
+  }
+
+  void _openSinglePlayerSheet(UserProfile? profile) {
+    widget.services.sound.play(SoundEffect.click);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SinglePlayerSetupSheet(
+        services: widget.services,
+        profile: profile,
       ),
     );
   }
@@ -565,31 +578,121 @@ class _HomePageState extends State<HomePage> {
                                 ],
                               ),
                               const SizedBox(height: 16),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: AppTheme.goldAccent,
-                                    foregroundColor: AppTheme.darkBackground,
-                                    minimumSize: const Size.fromHeight(52),
-                                  ),
-                                  onPressed: () =>
-                                      _openCreateRoomSheet(profile),
-                                  icon: const Icon(
-                                    Icons.play_arrow_rounded,
-                                    size: 28,
-                                  ),
-                                  label: const Text(
-                                    'PLAY NOW',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.0,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: AppTheme.goldAccent,
+                                        foregroundColor:
+                                            AppTheme.darkBackground,
+                                        minimumSize: const Size.fromHeight(50),
+                                      ),
+                                      onPressed: () =>
+                                          _openSinglePlayerSheet(profile),
+                                      icon: const Icon(
+                                        Icons.smart_toy_rounded,
+                                        size: 22,
+                                      ),
+                                      label: const FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          'SINGLE PLAYER',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.6,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: AppTheme.cyanAccent,
+                                        foregroundColor:
+                                            AppTheme.darkBackground,
+                                        minimumSize: const Size.fromHeight(50),
+                                      ),
+                                      onPressed: () =>
+                                          _openCreateRoomSheet(profile),
+                                      icon: const Icon(
+                                        Icons.public_rounded,
+                                        size: 22,
+                                      ),
+                                      label: const FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          'MULTIPLAYER',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.6,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        // Prominent Single Player vs System Feature Banner
+                        Card(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: () => _openSinglePlayerSheet(profile),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 48,
+                                    height: 48,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.purpleAccent
+                                          .withValues(alpha: 0.16),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: const Text(
+                                      '🤖',
+                                      style: TextStyle(fontSize: 26),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Play vs System (Single Player)',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Easy • Normal • Hard • Impossible • 3×3–6×6 • Offline Ready',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: scheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(Icons.play_circle_fill_rounded,
+                                      color: AppTheme.purpleAccent, size: 30),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 14),

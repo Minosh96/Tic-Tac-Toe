@@ -48,13 +48,7 @@ class GameRepository {
     return user;
   }
 
-  String get currentUid {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) {
-      throw StateError('Player is not signed in yet.');
-    }
-    return uid;
-  }
+  String get currentUid => _auth.currentUser?.uid ?? 'offline_player';
 
   String? get maybeCurrentUid => _auth.currentUser?.uid;
 
