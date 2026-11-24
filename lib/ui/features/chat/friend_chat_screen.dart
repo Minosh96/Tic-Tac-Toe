@@ -601,16 +601,20 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
                                     ],
                                   ),
                                 ),
-                              );
-                            }
+                              ),
+                            );
+                          }
 
-                            Uint8List? imgBytes;
-                            if (msg.hasImage) {
-                              try {
-                                imgBytes = base64Decode(msg.imageBase64!);
-                              } catch (_) {}
-                            }
-                            final bubble = Container(
+                          Uint8List? imgBytes;
+                          if (msg.hasImage) {
+                            try {
+                              imgBytes = base64Decode(msg.imageBase64!);
+                            } catch (_) {}
+                          }
+                          final bubble = GestureDetector(
+                            onLongPress: () =>
+                                _showMessageActions(msg, isMe: isMe),
+                            child: Container(
                               constraints: BoxConstraints(
                                 maxWidth:
                                     MediaQuery.of(context).size.width * 0.72,
@@ -656,16 +660,39 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
                                       style: const TextStyle(fontSize: 15),
                                     ),
                                   const SizedBox(height: 3),
-                                  Text(
-                                    _formatTime(msg.createdAt),
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: scheme.onSurfaceVariant,
-                                    ),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _formatTime(msg.createdAt),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      InkWell(
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                        onTap: () => _showMessageActions(
+                                          msg,
+                                          isMe: isMe,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(2),
+                                          child: Icon(
+                                            Icons.more_horiz_rounded,
+                                            size: 14,
+                                            color: scheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            );
+                            ),
+                          );
 
                             if (isMe) {
                               return Align(
