@@ -173,16 +173,24 @@ class GameRepository {
       if (data['hostId'] == user.uid) {
         throw Exception('You are already the host of this room.');
       }
-      if (data['hostEmoji'] == emoji) {
+      final hostEmoji = GameEngine.sanitizeEmoji(
+        data['hostEmoji'] as String?,
+        fallback: '❌',
+      );
+      final safeGuestEmoji = GameEngine.sanitizeEmoji(
+        emoji,
+        fallback: '⭕',
+      );
+      if (hostEmoji == safeGuestEmoji) {
         throw Exception(
-          'Choose a different emoji from the host (${data['hostEmoji']}).',
+          'Choose a different emoji from the host ($hostEmoji).',
         );
       }
       final isBlitz = data['gameMode'] == GameMode.blitz.id;
       final patch = <String, dynamic>{
         'guestId': user.uid,
         'guestName': name,
-        'guestEmoji': emoji,
+        'guestEmoji': safeGuestEmoji,
         'guestAvatar': guestAvatar,
         'status': 'playing',
         'turnStartedAt': FieldValue.serverTimestamp(),

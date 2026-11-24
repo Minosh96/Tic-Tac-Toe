@@ -52,11 +52,20 @@ class WheelSpinResult {
   ChallengeWheelOption? get option => ChallengeWheelOption.fromId(optionId);
 
   factory WheelSpinResult.fromMap(Map<String, dynamic> map) {
+    final h = GameEngine.sanitizeEmoji(
+      map['hostEmoji'] as String?,
+      fallback: '❌',
+    );
+    final g = GameEngine.sanitizeEmoji(
+      map['guestEmoji'] as String?,
+      fallback: '⭕',
+      avoidSameAs: h,
+    );
     return WheelSpinResult(
       optionId: map['optionId'] as String? ?? '',
       spinId: map['spinId'] as String? ?? '',
-      hostEmoji: map['hostEmoji'] as String? ?? '',
-      guestEmoji: map['guestEmoji'] as String? ?? '',
+      hostEmoji: h,
+      guestEmoji: g,
     );
   }
 
@@ -150,14 +159,27 @@ class GameRoom {
     final rawProposal = data['wheelProposal'];
     final rawWheelResult = data['wheelResult'];
 
+    final safeHostEmoji = GameEngine.sanitizeEmoji(
+      data['hostEmoji'] as String?,
+      fallback: '❌',
+    );
+    final rawGuestEmoji = (data['guestEmoji'] as String?)?.trim() ?? '';
+    final safeGuestEmoji = rawGuestEmoji.isEmpty
+        ? ''
+        : GameEngine.sanitizeEmoji(
+            rawGuestEmoji,
+            fallback: '⭕',
+            avoidSameAs: safeHostEmoji,
+          );
+
     return GameRoom(
       code: doc.id,
       hostId: data['hostId'] as String? ?? '',
       guestId: data['guestId'] as String? ?? '',
       hostName: data['hostName'] as String? ?? '',
       guestName: data['guestName'] as String? ?? '',
-      hostEmoji: data['hostEmoji'] as String? ?? '❌',
-      guestEmoji: data['guestEmoji'] as String? ?? '',
+      hostEmoji: safeHostEmoji,
+      guestEmoji: safeGuestEmoji,
       size: size,
       bestOf: (data['bestOf'] as num?)?.toInt() ?? 3,
       status: data['status'] as String? ?? 'lobby',

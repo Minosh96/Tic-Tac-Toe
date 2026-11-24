@@ -1,25 +1,25 @@
 import 'dart:math';
 
-/// Categorized curated emoji marks — includes Classic, Boy/Girl/People,
-/// Hilarious/Funny, Animals, and Fun/Arcade categories.
+/// Categorized curated emoji marks — strictly universal Unicode 6.0–9.0 emojis
+/// guaranteed to render cleanly on all Android devices (no missing-glyph boxes).
 const Map<String, List<String>> emojiCategories = {
   'Classic': ['❌', '⭕', '🔥', '⭐', '⚡', '👑', '💎', '🚀', '🏆', '🎯', '💯', '❤️'],
   'People': [
-    '👦', '👧', '🧒', '👶', '🧑', '👨', '👩', '🤴', '👸', '🦸‍♂️', '🦸‍♀️', '🧙‍♂️',
-    '🧙‍♀️', '🥷', '🧑‍🚀', '🤠', '🕵️', '🧛', '🧜‍♀️', '🧝', '💃', '🕺',
+    '👦', '👧', '👶', '👨', '👩', '🤴', '👸', '🤠', '💃', '🕺', '🎅', '👼',
+    '👮', '👷', '💂', '🕵️', '👰', '👳', '🙋', '🙇', '🙌', '💪',
   ],
   'Funny': [
-    '😂', '🤣', '😜', '🤪', '😝', '🤑', '🤯', '😱', '🥶', '🥵', '🤡', '💩',
-    '👻', '👽', '👾', '🤖', '😈', '👹', '💀', '🙈', '🙉', '🙊', '🙄', '😏',
-    '😤', '🥺', '😴', '🤮', '🤧', '🥴', '🥸', '🤓', '😎', '🥳', '🤭', '🫣',
+    '😂', '🤣', '😜', '😝', '😆', '😅', '😋', '😛', '🤑', '😱', '🤡', '💩',
+    '👻', '👽', '👾', '🤖', '😈', '👹', '👺', '💀', '🙈', '🙉', '🙊', '🙄',
+    '😏', '😤', '😴', '🤧', '😬', '😵', '😲', '🤓', '😎', '😹', '😻', '😼',
   ],
   'Animals': [
     '🐱', '🐶', '🦊', '🐼', '🐨', '🦁', '🐯', '🐸', '🐵', '🐔', '🐧', '🦄',
-    '🐉', '🦖', '🐙', '🦈', '🐝', '🦋', '🐢', '🦉', '🦝', '🦥',
+    '🐉', '🐻', '🐙', '🦈', '🐝', '🦋', '🐢', '🦉', '🐰', '🐬',
   ],
   'Fun': [
     '🍕', '🍔', '🌮', '🍩', '🍉', '🥑', '🍦', '🍿', '🎸', '⚽', '🏀', '💣',
-    '🎉', '🎈', '🌈', '🔮', '🎮', '🕹️', '🎲', '💜', '🩵', '🍀',
+    '🎉', '🎈', '🌈', '🔮', '🎮', '🕹️', '🎲', '💜', '💙', '🍀',
   ],
 };
 
@@ -27,6 +27,41 @@ const Map<String, List<String>> emojiCategories = {
 final List<String> emojiChoices = [
   for (final group in emojiCategories.values) ...group,
 ];
+
+/// Fast lookup set of verified universal emojis.
+final Set<String> _universalEmojiSet = Set<String>.from(emojiChoices);
+
+/// Maps newer Unicode 11–15 / OEM-unsupported emojis to universal equivalents.
+const Map<String, String> _legacyEmojiFallbacks = {
+  '🩵': '💙',
+  '🩷': '❤️',
+  '🩶': '💜',
+  '🫣': '🙈',
+  '🥸': '😎',
+  '🥷': '🤖',
+  '🧑‍🚀': '🚀',
+  '🦸‍♂️': '⚡',
+  '🦸‍♀️': '⚡',
+  '🧙‍♂️': '🔮',
+  '🧙‍♀️': '🔮',
+  '🧛': '👻',
+  '🧜‍♀️': '🐬',
+  '🧝': '👑',
+  '🧒': '👦',
+  '🧑': '👦',
+  '🦥': '🐨',
+  '🦝': '🦊',
+  '🦖': '🐉',
+  '🥶': '😱',
+  '🥵': '🔥',
+  '🥺': '😻',
+  '🥴': '😜',
+  '🥳': '🎉',
+  '🤪': '😜',
+  '🤯': '😱',
+  '🤮': '😝',
+  '🤭': '🙊',
+};
 
 /// Supported board dimensions (N×N).
 const List<int> supportedBoardSizes = [3, 4, 5, 6];
@@ -165,6 +200,33 @@ class GameEngine {
       return 'Use letters, numbers, spaces, _, -, or . only.';
     }
     return null;
+  }
+
+  /// Ensures an emoji mark is supported across all Android devices (preventing
+  /// missing-glyph boxes `[X]` when a player on Android 14 plays with Android 10/11/12).
+  static String sanitizeEmoji(
+    String? raw, {
+    String fallback = '❌',
+    String? avoidSameAs,
+  }) {
+    final trimmed = raw?.trim() ?? '';
+    String resolved;
+    if (trimmed.isEmpty) {
+      resolved = fallback;
+    } else if (_universalEmojiSet.contains(trimmed)) {
+      resolved = trimmed;
+    } else if (_legacyEmojiFallbacks.containsKey(trimmed)) {
+      resolved = _legacyEmojiFallbacks[trimmed]!;
+    } else {
+      resolved = fallback;
+    }
+
+    if (avoidSameAs != null && resolved == avoidSameAs) {
+      for (final candidate in const ['⭕', '❌', '🔥', '⭐', '⚡', '👑']) {
+        if (candidate != avoidSameAs) return candidate;
+      }
+    }
+    return resolved;
   }
 
   static (String hostEmoji, String guestEmoji) pickShuffleEmojis([

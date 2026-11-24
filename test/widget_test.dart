@@ -325,6 +325,20 @@ void main() {
     expect(privateProfile.friendsDisplayPhotoBase64, isNull);
   });
 
+  test('GameEngine.sanitizeEmoji converts unsupported device emojis to universal emojis', () {
+    expect(GameEngine.sanitizeEmoji('🩵'), '💙');
+    expect(GameEngine.sanitizeEmoji('🫣'), '🙈');
+    expect(GameEngine.sanitizeEmoji('🥷'), '🤖');
+    expect(GameEngine.sanitizeEmoji('🥸'), '😎');
+    expect(
+      GameEngine.sanitizeEmoji('🩵', avoidSameAs: '💙'),
+      isNot('💙'),
+    );
+    for (final emoji in emojiChoices) {
+      expect(GameEngine.sanitizeEmoji(emoji), emoji);
+    }
+  });
+
   testWidgets('AboutScreen shows v3.4.2 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {

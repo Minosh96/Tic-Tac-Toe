@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../game_engine.dart';
+
 /// Visibility scope for the player's profile (including profile picture & name).
 enum ProfileVisibility {
   public('public', 'Public', 'Visible to everyone & global rankings'),
@@ -111,7 +113,10 @@ class UserProfile {
       nickname: data['nickname'] as String? ?? defaultSystemNicknameFor(doc.id),
       avatarId: data['avatarId'] as String? ?? 'astro',
       photoBase64: data['photoBase64'] as String?,
-      preferredEmoji: data['preferredEmoji'] as String? ?? '❌',
+      preferredEmoji: GameEngine.sanitizeEmoji(
+        data['preferredEmoji'] as String?,
+        fallback: '❌',
+      ),
       friendCode: data['friendCode'] as String? ?? '',
       publicProfileEnabled: vis == ProfileVisibility.public && pubEnabled,
       leaderboardOptIn: data['leaderboardOptIn'] != false,
