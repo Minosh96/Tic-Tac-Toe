@@ -178,6 +178,23 @@ class PreferencesController extends ChangeNotifier {
 
   bool isRivalHidden(String rivalryId) => _hiddenRivals.contains(rivalryId);
 
+  /// Resets all local preferences to brand-new defaults (used on permanent account deletion).
+  Future<void> resetAllSettingsToDefault() async {
+    _themeMode = ThemeMode.system;
+    _soundEnabled = true;
+    _hapticsEnabled = true;
+    _reactionsMuted = false;
+    _reducedMotion = false;
+    _favoriteBoardSize = 3;
+    _favoriteMode = 'classic';
+    _hiddenRivals.clear();
+    notifyListeners();
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.clear();
+    } catch (_) {}
+  }
+
   Future<void> _persist() async {
     try {
       final sp = await SharedPreferences.getInstance();

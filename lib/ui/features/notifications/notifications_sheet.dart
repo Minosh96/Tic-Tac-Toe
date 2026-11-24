@@ -98,22 +98,23 @@ class NotificationsSheet extends StatelessWidget {
                                           visualDensity: VisualDensity.compact,
                                         ),
                                       const Spacer(),
-                                      if (unreadChats.isNotEmpty ||
-                                          acceptedOut.isNotEmpty)
-                                        TextButton(
+                                      if (total > 0)
+                                        TextButton.icon(
                                           onPressed: () async {
-                                            final ids = unreadChats
+                                            // 1. Clear all unread messages & call logs in chats
+                                            final chatIds = unreadChats
                                                 .map((c) => c.chatId)
                                                 .toList(growable: false);
-                                            if (ids.isNotEmpty) {
+                                            if (chatIds.isNotEmpty) {
                                               await services.chat
-                                                  .markAllChatsRead(ids);
-                                              for (final id in ids) {
+                                                  .markAllChatsRead(chatIds);
+                                              for (final id in chatIds) {
                                                 await PushNotificationService
                                                     .cancelMessageNotification(
                                                         id);
                                               }
                                             }
+                                            // 2. Clear all accepted outgoing game challenges
                                             if (acceptedOut.isNotEmpty) {
                                               await services.friends
                                                   .clearAllSentChallenges(
@@ -122,8 +123,40 @@ class NotificationsSheet extends StatelessWidget {
                                                     .toList(growable: false),
                                               );
                                             }
+                                            // 3. Dismiss/decline all incoming game challenges
+                                            for (final c in challenges) {
+                                              try {
+                                                await services.friends
+                                                    .declineFriendChallenge(
+                                                        c.id);
+                                              } catch (_) {}
+                                            }
+                                            // 4. Dismiss/decline all ringing voice call notifications
+                                            for (final call in calls) {
+                                              try {
+                                                await PushNotificationService
+                                                    .cancelCallNotification(
+                                                        call.callId);
+                                                await services.voiceCall
+                                                    .declineCall(call.callId);
+                                              } catch (_) {}
+                                            }
+                                            // 5. Dismiss/decline pending friend requests
+                                            for (final req in requests) {
+                                              try {
+                                                await services.friends
+                                                    .respondFriendRequest(
+                                                  request: req,
+                                                  accept: false,
+                                                );
+                                              } catch (_) {}
+                                            }
                                           },
-                                          child: const Text('Clear All'),
+                                          icon: const Icon(
+                                            Icons.clear_all_rounded,
+                                            size: 18,
+                                          ),
+                                          label: const Text('Clear All'),
                                         ),
                                     ],
                                   ),
@@ -418,6 +451,9 @@ class NotificationsSheet extends StatelessWidget {
                                         final otherUid =
                                             chat.otherParticipantUid(uid);
                                         final unread = chat.unreadCountFor(uid);
+                                        final isCallNotif = chat.lastMessage
+                                            .trimLeft()
+                                            .startsWith('📞');
                                         return LiveUserProfileBuilder(
                                           services: services,
                                           uid: otherUid,
@@ -441,7 +477,9 @@ class NotificationsSheet extends StatelessWidget {
                                                     size: 40,
                                                   ),
                                                   title: Text(
-                                                    senderLabel,
+                                                    isCallNotif
+                                                        ? '📞 Call from $senderLabel'
+                                                        : '💬 Message from $senderLabel',
                                                     style: const TextStyle(
                                                       fontWeight:
                                                           FontWeight.w800,

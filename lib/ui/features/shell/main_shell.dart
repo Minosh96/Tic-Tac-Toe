@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/services/app_services.dart';
@@ -32,6 +33,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   StreamSubscription<List<DirectChatSummary>>? _chatNotifSub;
   StreamSubscription<List<VoiceCallSession>>? _callNotifSub;
+  StreamSubscription<User?>? _authSub;
+  String _activeUid = '';
 
   bool _chatsSeeded = false;
   final Map<String, DateTime?> _lastNotifiedMsgAt = <String, DateTime?>{};
@@ -41,7 +44,22 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _activeUid = widget.services.game.maybeCurrentUid ?? '';
     _initNotifications();
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      final nextUid = user?.uid ?? '';
+      if (nextUid.isNotEmpty && nextUid != _activeUid) {
+        _activeUid = nextUid;
+        _chatNotifSub?.cancel();
+        _callNotifSub?.cancel();
+        _chatsSeeded = false;
+        _lastNotifiedMsgAt.clear();
+        _activeRingingCallIds.clear();
+        LiveUserProfileBuilder.cache.clear();
+        _initNotifications();
+        if (mounted) setState(() {});
+      }
+    });
   }
 
   Future<void> _initNotifications() async {
@@ -117,6 +135,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _authSub?.cancel();
     _chatNotifSub?.cancel();
     _callNotifSub?.cancel();
     super.dispose();
@@ -130,13 +149,22 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final uid = widget.services.game.currentUid;
+    final uid = widget.services.game.maybeCurrentUid ?? _activeUid;
+    if (uid.isEmpty) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     final pages = [
-      HomePage(services: widget.services, onNavigateTab: _goToTab),
-      FriendsPage(services: widget.services),
-      TrophiesPage(services: widget.services),
-      LeaderboardPage(services: widget.services),
-      ProfilePage(services: widget.services),
+      HomePage(
+        key: ValueKey('home_$uid'),
+        services: widget.services,
+        onNavigateTab: _goToTab,
+      ),
+      FriendsPage(key: ValueKey('friends_$uid'), services: widget.services),
+      TrophiesPage(key: ValueKey('trophies_$uid'), services: widget.services),
+      LeaderboardPage(key: ValueKey('ranks_$uid'), services: widget.services),
+      ProfilePage(key: ValueKey('profile_$uid'), services: widget.services),
     ];
 
     return Scaffold(

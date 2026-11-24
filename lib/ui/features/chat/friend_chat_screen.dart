@@ -178,44 +178,217 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
   Future<void> _confirmAndClearChat() async {
     final chatId = _chatId;
     if (chatId == null) return;
-    final confirmed = await showDialog<bool>(
+    final choice = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear Chat?'),
-        content: Text(
-          'Are you sure you want to clear all messages in this chat with ${widget.friendName}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-              foregroundColor: Theme.of(ctx).colorScheme.onError,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: scheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  child: Text(
+                    'Clear Chat with ${widget.friendName}',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.person_outline_rounded),
+                  title: const Text(
+                    'Clear for Me Only',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    'Clears messages on your device; ${widget.friendName} keeps their chat copy',
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'me'),
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_forever_rounded,
+                    color: scheme.error,
+                  ),
+                  title: Text(
+                    'Clear for Everyone',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.error,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Permanently deletes all messages in this chat for both players',
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'everyone'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.close_rounded),
+                  title: const Text('Cancel'),
+                  onTap: () => Navigator.pop(ctx),
+                ),
+              ],
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Clear Chat'),
           ),
-        ],
-      ),
+        );
+      },
     );
-    if (confirmed != true || !mounted) return;
+    if (choice == null || !mounted) return;
     try {
-      await widget.services.chat.clearChat(chatId);
+      if (choice == 'everyone') {
+        await widget.services.chat.clearChatForEveryone(chatId);
+      } else {
+        await widget.services.chat.clearChatForMe(chatId);
+      }
       await PushNotificationService.cancelMessageNotification(chatId);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(content: Text('Chat messages cleared.')),
+          SnackBar(
+            content: Text(
+              choice == 'everyone'
+                  ? 'Chat cleared for everyone.'
+                  : 'Chat cleared for you.',
+            ),
+          ),
         );
       setState(() {});
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not clear chat: $e')),
+      );
+    }
+  }
+
+  Future<void> _showMessageActions(
+    DirectChatMessage msg, {
+    required bool isMe,
+  }) async {
+    final chatId = _chatId;
+    if (chatId == null) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: scheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  child: Text(
+                    msg.text.isNotEmpty
+                        ? (msg.text.length > 42
+                            ? '“${msg.text.substring(0, 42)}…”'
+                            : '“${msg.text}”')
+                        : 'Photo Message',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.visibility_off_outlined),
+                  title: const Text(
+                    'Delete for Me',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: const Text(
+                    'Removes this message from your chat view only',
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'me'),
+                ),
+                ListTile(
+                  leading: Icon(
+                    isMe ? Icons.undo_rounded : Icons.delete_forever_rounded,
+                    color: scheme.error,
+                  ),
+                  title: Text(
+                    isMe
+                        ? 'Unsend / Delete for Everyone'
+                        : 'Delete for Everyone',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.error,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Permanently removes this message for both players',
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'everyone'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.close_rounded),
+                  title: const Text('Cancel'),
+                  onTap: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (choice == null || !mounted) return;
+    try {
+      if (choice == 'everyone') {
+        await widget.services.chat.deleteMessageForEveryone(
+          chatId: chatId,
+          messageId: msg.id,
+        );
+      } else {
+        await widget.services.chat.deleteMessageForMe(
+          chatId: chatId,
+          messageId: msg.id,
+        );
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              choice == 'everyone'
+                  ? (isMe ? 'Message unsent for everyone.' : 'Message deleted for everyone.')
+                  : 'Message deleted for you.',
+            ),
+          ),
+        );
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete message: $e')),
       );
     }
   }
@@ -361,9 +534,12 @@ class _FriendChatScreenState extends State<FriendChatScreen> {
                                   msg.text.toLowerCase().contains('missed') ||
                                       msg.text.toLowerCase().contains('declined');
                               return Center(
-                                child: Container(
-                                  margin:
-                                      const EdgeInsets.symmetric(vertical: 6),
+                                child: GestureDetector(
+                                  onLongPress: () =>
+                                      _showMessageActions(msg, isMe: isMe),
+                                  child: Container(
+                                    margin:
+                                        const EdgeInsets.symmetric(vertical: 6),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 14,
                                     vertical: 8,

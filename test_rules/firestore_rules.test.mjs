@@ -171,6 +171,14 @@ test('Firestore Security Rules — Melow v2.0 invariants', async (t) => {
       })
     );
     await assertFails(updateDoc(dmHostRef, { text: 'Edited' }));
+    // Participant can update only deletedFor ("delete for me")
+    await assertSucceeds(updateDoc(doc(guestDb, 'chats', chatId, 'messages', 'dm_clear'), {
+      deletedFor: ['guest_uid'],
+    }));
+    // Participant can set clearedAtBy on chat document
+    await assertSucceeds(updateDoc(doc(guestDb, 'chats', chatId), {
+      clearedAtBy: { guest_uid: serverTimestamp() },
+    }));
     await assertFails(deleteDoc(doc(strangerDb, 'chats', chatId, 'messages', 'dm_clear')));
     await assertSucceeds(deleteDoc(doc(guestDb, 'chats', chatId, 'messages', 'dm_clear')));
   });
@@ -272,5 +280,13 @@ test('Firestore Security Rules — Melow v2.0 invariants', async (t) => {
     );
     // Reject jump exceeding stats + 1
     await assertFails(updateDoc(lbRef, { wins: 99 }));
+
+    // Self-service account deletion & reciprocal friend entry delete
+    await assertFails(deleteDoc(doc(strangerDb, 'users', 'host_uid', 'friends', 'guest_uid')));
+    await assertSucceeds(deleteDoc(doc(guestDb, 'users', 'host_uid', 'friends', 'guest_uid')));
+    await assertFails(deleteDoc(doc(guestDb, 'stats', 'host_uid')));
+    await assertSucceeds(deleteDoc(doc(hostDb, 'stats', 'host_uid')));
+    await assertSucceeds(deleteDoc(doc(hostDb, 'leaderboardEntries', 'host_uid')));
+    await assertSucceeds(deleteDoc(doc(hostDb, 'users', 'host_uid')));
   });
 });

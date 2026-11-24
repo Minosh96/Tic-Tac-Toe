@@ -191,6 +191,7 @@ class DirectChatSummary {
     this.lastSenderName = '',
     required this.unreadBy,
     this.unreadCounts = const <String, int>{},
+    this.clearedAtBy = const <String, DateTime>{},
     this.lastMessageAt,
   });
 
@@ -201,6 +202,7 @@ class DirectChatSummary {
   final String lastSenderName;
   final List<String> unreadBy;
   final Map<String, int> unreadCounts;
+  final Map<String, DateTime> clearedAtBy;
   final DateTime? lastMessageAt;
 
   int unreadCountFor(String uid) {
@@ -210,6 +212,19 @@ class DirectChatSummary {
   }
 
   bool isUnreadFor(String uid) => unreadCountFor(uid) > 0;
+
+  DateTime? clearedAtFor(String uid) => clearedAtBy[uid];
+
+  /// Returns the last message preview visible to [uid], respecting "Clear for Me".
+  String visibleLastMessageFor(String uid) {
+    final clearedAt = clearedAtBy[uid];
+    if (clearedAt != null && lastMessageAt != null) {
+      if (!lastMessageAt!.isAfter(clearedAt)) {
+        return '';
+      }
+    }
+    return lastMessage;
+  }
 
   String otherParticipantUid(String myUid) =>
       participants.firstWhere((p) => p != myUid, orElse: () => '');
@@ -225,6 +240,16 @@ class DirectChatSummary {
         counts[entry.key.toString()] = (entry.value as num?)?.toInt() ?? 0;
       }
     }
+    final rawCleared = data['clearedAtBy'];
+    final clearedMap = <String, DateTime>{};
+    if (rawCleared is Map) {
+      for (final entry in rawCleared.entries) {
+        if (entry.value is Timestamp) {
+          clearedMap[entry.key.toString()] =
+              (entry.value as Timestamp).toDate();
+        }
+      }
+    }
     return DirectChatSummary(
       chatId: doc.id,
       participants: (data['participants'] as List? ?? const [])
@@ -237,6 +262,7 @@ class DirectChatSummary {
           .map((e) => e.toString())
           .toList(growable: false),
       unreadCounts: counts,
+      clearedAtBy: clearedMap,
       lastMessageAt: data['lastMessageAt'] is Timestamp
           ? (data['lastMessageAt'] as Timestamp).toDate()
           : null,
@@ -252,6 +278,7 @@ class DirectChatMessage {
     required this.text,
     this.imageBase64,
     this.msgType = 'text',
+    this.deletedFor = const <String>[],
     this.createdAt,
   });
 
@@ -261,10 +288,12 @@ class DirectChatMessage {
   final String text;
   final String? imageBase64;
   final String msgType; // 'text' | 'image' | 'call'
+  final List<String> deletedFor;
   final DateTime? createdAt;
 
   bool get hasImage => imageBase64 != null && imageBase64!.isNotEmpty;
   bool get isCallLog => msgType == 'call' || text.startsWith('📞');
+  bool isDeletedFor(String uid) => deletedFor.contains(uid);
 
   factory DirectChatMessage.fromFirestore(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -277,6 +306,9 @@ class DirectChatMessage {
       text: data['text'] as String? ?? '',
       imageBase64: data['imageBase64'] as String?,
       msgType: data['msgType'] as String? ?? 'text',
+      deletedFor: (data['deletedFor'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
       createdAt: data['createdAt'] is Timestamp
           ? (data['createdAt'] as Timestamp).toDate()
           : null,

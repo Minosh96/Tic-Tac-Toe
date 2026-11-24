@@ -789,12 +789,12 @@ class _FriendsPageState extends State<FriendsPage> {
                                           chatsByFriend[f.friendUid];
                                       final unread =
                                           chatSummary?.unreadCountFor(uid) ?? 0;
-                                      final previewText =
-                                          chatSummary != null &&
-                                                  chatSummary
-                                                      .lastMessage.isNotEmpty
-                                              ? chatSummary.lastMessage
-                                              : 'Chat, call, or start a rivalry';
+                                      final visibleLast = chatSummary
+                                              ?.visibleLastMessageFor(uid) ??
+                                          '';
+                                      final previewText = visibleLast.isNotEmpty
+                                          ? visibleLast
+                                          : 'Chat, call, or start a rivalry';
                                       return Padding(
                                         padding:
                                             const EdgeInsets.only(bottom: 10),
@@ -900,13 +900,74 @@ class _FriendsPageState extends State<FriendsPage> {
                                                             uid,
                                                             f.friendUid,
                                                           );
-                                                          await widget
-                                                              .services.chat
-                                                              .clearChat(
-                                                                  chatId);
-                                                          _snack(
-                                                            'Cleared chat with $liveName.',
+                                                          final choice =
+                                                              await showDialog<
+                                                                  String>(
+                                                            context: context,
+                                                            builder: (ctx) =>
+                                                                AlertDialog(
+                                                              title: Text(
+                                                                'Clear Chat with $liveName',
+                                                              ),
+                                                              content:
+                                                                  const Text(
+                                                                'Choose whether to clear this chat only for yourself or for everyone.',
+                                                              ),
+                                                              actions: [
+                                                                TextButton(
+                                                                  onPressed: () =>
+                                                                      Navigator.pop(
+                                                                          ctx),
+                                                                  child: const Text(
+                                                                      'Cancel'),
+                                                                ),
+                                                                FilledButton
+                                                                    .tonal(
+                                                                  onPressed: () =>
+                                                                      Navigator.pop(
+                                                                          ctx,
+                                                                          'me'),
+                                                                  child: const Text(
+                                                                      'Clear for Me'),
+                                                                ),
+                                                                FilledButton(
+                                                                  style: FilledButton
+                                                                      .styleFrom(
+                                                                    backgroundColor:
+                                                                        scheme
+                                                                            .error,
+                                                                    foregroundColor:
+                                                                        scheme
+                                                                            .onError,
+                                                                  ),
+                                                                  onPressed: () =>
+                                                                      Navigator.pop(
+                                                                          ctx,
+                                                                          'everyone'),
+                                                                  child: const Text(
+                                                                      'Clear for Everyone'),
+                                                                ),
+                                                              ],
+                                                            ),
                                                           );
+                                                          if (choice == 'me') {
+                                                            await widget
+                                                                .services.chat
+                                                                .clearChatForMe(
+                                                                    chatId);
+                                                            _snack(
+                                                              'Cleared chat with $liveName for you.',
+                                                            );
+                                                          } else if (choice ==
+                                                              'everyone') {
+                                                            await widget
+                                                                .services.chat
+                                                                .clearChatForEveryone(
+                                                                    chatId);
+                                                            _snack(
+                                                              'Cleared chat with $liveName for everyone.',
+                                                            );
+                                                          }
                                                         } else if (action ==
                                                             'remove') {
                                                           await widget

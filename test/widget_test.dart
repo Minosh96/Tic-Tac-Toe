@@ -339,14 +339,38 @@ void main() {
     }
   });
 
-  testWidgets('AboutScreen shows v3.4.2 branding and Melow Labs credit', (
+  test('DirectChatMessage supports per-user deletedFor and DirectChatSummary supports clearedAtBy', () {
+    const msg = DirectChatMessage(
+      id: 'm1',
+      senderUid: 'u1',
+      senderName: 'Minosh',
+      text: 'Secret message',
+      deletedFor: ['u2'],
+    );
+    expect(msg.isDeletedFor('u2'), isTrue);
+    expect(msg.isDeletedFor('u1'), isFalse);
+
+    final summary = DirectChatSummary(
+      chatId: 'u1_u2',
+      participants: const ['u1', 'u2'],
+      lastMessage: 'Hello there',
+      lastSenderUid: 'u1',
+      unreadBy: const [],
+      lastMessageAt: DateTime(2026, 11, 24, 10, 0),
+      clearedAtBy: {'u1': DateTime(2026, 11, 24, 10, 5)},
+    );
+    expect(summary.visibleLastMessageFor('u1'), '');
+    expect(summary.visibleLastMessageFor('u2'), 'Hello there');
+  });
+
+  testWidgets('AboutScreen shows v3.5.0 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 3.4.2 (Build 12)'), findsOneWidget);
+    expect(find.text('Version 3.5.0 (Build 13)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,

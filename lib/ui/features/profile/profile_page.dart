@@ -161,6 +161,64 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  Future<void> _openPermanentDeleteAccountDialog() async {
+    bool busy = false;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return AlertDialog(
+            title: const Text('Permanently Delete Account?'),
+            content: const Text(
+              'This will permanently delete your account, friends, chats, notifications, trophies, match stats, and all settings, and start fresh with a brand-new default profile.\n\nThis action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: busy ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: scheme.error,
+                  foregroundColor: scheme.onError,
+                ),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        setDialogState(() => busy = true);
+                        try {
+                          final fresh = await widget.services.profile
+                              .permanentlyDeleteAccountAndCreateNew(
+                            preferences: widget.services.preferences,
+                            chatRepository: widget.services.chat,
+                          );
+                          LiveUserProfileBuilder.cache.clear();
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          _snack(
+                            'Account permanently deleted. Started fresh as ${fresh.nickname}!',
+                          );
+                          if (mounted) setState(() {});
+                        } catch (e) {
+                          _snack(
+                            e.toString().replaceFirst('Exception: ', ''),
+                          );
+                        } finally {
+                          if (ctx.mounted) setDialogState(() => busy = false);
+                        }
+                      },
+                icon: const Icon(Icons.no_accounts_rounded, size: 18),
+                label: Text(
+                  busy ? 'Deleting Account…' : 'Permanently Delete Account',
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _openEditProfileSheet(UserProfile profile) async {
     final nameCtrl = TextEditingController(text: profile.nickname);
     String avatarId = profile.avatarId;
@@ -726,7 +784,26 @@ class _ProfilePageState extends State<ProfilePage> {
                                         size: 18,
                                       ),
                                       label: const Text(
-                                        'Delete / Reset Profile to System Default',
+                                        'Reset Name / Photo to System Default',
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: scheme.error,
+                                        foregroundColor: scheme.onError,
+                                      ),
+                                      onPressed:
+                                          _openPermanentDeleteAccountDialog,
+                                      icon: const Icon(
+                                        Icons.no_accounts_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text(
+                                        'Permanently Delete Account & All Data',
                                       ),
                                     ),
                                   ),

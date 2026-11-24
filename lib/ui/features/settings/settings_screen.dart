@@ -307,11 +307,80 @@ class SettingsScreen extends StatelessWidget {
                                   );
                                 },
                                 icon: const Icon(
-                                  Icons.delete_forever_rounded,
+                                  Icons.person_off_rounded,
                                   size: 18,
                                 ),
                                 label: const Text(
-                                  'Delete Profile (Reset to Default System Name)',
+                                  'Reset Name & Photo to System Default',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor:
+                                      Theme.of(context).colorScheme.error,
+                                  foregroundColor:
+                                      Theme.of(context).colorScheme.onError,
+                                ),
+                                onPressed: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text(
+                                        'Permanently Delete Account?',
+                                      ),
+                                      content: const Text(
+                                        'This will permanently delete your account, friends, chats, notifications, trophies, match stats, and all settings, and start fresh with a brand-new default profile.',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        FilledButton(
+                                          style: FilledButton.styleFrom(
+                                            backgroundColor: Theme.of(ctx)
+                                                .colorScheme
+                                                .error,
+                                            foregroundColor: Theme.of(ctx)
+                                                .colorScheme
+                                                .onError,
+                                          ),
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, true),
+                                          child: const Text(
+                                            'Permanently Delete',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed != true) return;
+                                  final fresh = await services.profile
+                                      .permanentlyDeleteAccountAndCreateNew(
+                                    preferences: services.preferences,
+                                    chatRepository: services.chat,
+                                  );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Account permanently deleted. Started fresh as ${fresh.nickname}!',
+                                      ),
+                                    ),
+                                  );
+                                  Navigator.pop(context);
+                                },
+                                icon: const Icon(
+                                  Icons.no_accounts_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text(
+                                  'Permanently Delete Account & All Data',
                                 ),
                               ),
                             ),
@@ -326,7 +395,7 @@ class SettingsScreen extends StatelessWidget {
                     child: ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('About Melow Tic Tac Toe'),
-                      subtitle: const Text('Version 3.4.2 • Melow Labs'),
+                      subtitle: const Text('Version 3.5.0 • Melow Labs'),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => Navigator.push(
                         context,

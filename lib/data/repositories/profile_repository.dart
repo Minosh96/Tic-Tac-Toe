@@ -2,9 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
+import '../../core/services/preferences_controller.dart';
+import '../../core/services/push_notification_service.dart';
 import '../../domain/game_engine.dart';
 import '../../domain/models/social_models.dart';
 import '../../domain/models/user_profile.dart';
+import 'chat_repository.dart';
 
 /// Manages player profile (including gallery photo), preferences, stats, achievements & trophies.
 class ProfileRepository {
@@ -287,6 +290,161 @@ class ProfileRepository {
         });
       }
     } catch (_) {}
+  }
+
+  /// Permanently deletes the current user's account, friends, chats, notifications,
+  /// trophies, stats, and settings, then signs in as a brand-new anonymous player
+  /// profile (`Player_XXXX`) without affecting other existing user profiles.
+  Future<UserProfile> permanentlyDeleteAccountAndCreateNew({
+    required PreferencesController preferences,
+    required ChatRepository chatRepository,
+  }) async {
+    final uid = currentUid;
+    final userRef = _userRef(uid);
+    String friendCode = '';
+    try {
+      final snap = await userRef.get();
+      friendCode = snap.data()?['friendCode'] as String? ?? '';
+    } catch (_) {}
+
+    // 1. Delete friendships on both sides (leaves friends' own user profiles completely untouched)
+    try {
+      final friendsSnap = await userRef.collection('friends').get();
+      for (final doc in friendsSnap.docs) {
+        final friendUid = doc.id;
+        try {
+          await _userRef(friendUid).collection('friends').doc(uid).delete();
+        } catch (_) {}
+        try {
+          await doc.reference.delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 2. Delete blocked entries
+    try {
+      final blockedSnap = await userRef.collection('blocked').get();
+      for (final doc in blockedSnap.docs) {
+        try {
+          await doc.reference.delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 3. Delete incoming & outgoing friend requests and game challenges (notifications)
+    for (final field in const ['senderUid', 'receiverUid']) {
+      try {
+        final reqSnap = await _db
+            .collection('friendRequests')
+            .where(field, isEqualTo: uid)
+            .get();
+        for (final doc in reqSnap.docs) {
+          try {
+            await doc.reference.delete();
+          } catch (_) {}
+        }
+      } catch (_) {}
+
+      try {
+        final chalSnap = await _db
+            .collection('friendChallenges')
+            .where(field, isEqualTo: uid)
+            .get();
+        for (final doc in chalSnap.docs) {
+          try {
+            await doc.reference.delete();
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    // 4. Delete all 1-on-1 chats, messages & cancel message notifications
+    try {
+      final chatsSnap = await _db
+          .collection('chats')
+          .where('participants', arrayContains: uid)
+          .get();
+      for (final chatDoc in chatsSnap.docs) {
+        await PushNotificationService.cancelMessageNotification(chatDoc.id);
+        try {
+          final msgSnap = await chatDoc.reference.collection('messages').get();
+          for (final m in msgSnap.docs) {
+            try {
+              await m.reference.delete();
+            } catch (_) {}
+          }
+        } catch (_) {}
+        try {
+          await chatDoc.reference.delete();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // 5. Delete call records & cancel call notifications
+    for (final field in const ['callerUid', 'calleeUid']) {
+      try {
+        final callsSnap =
+            await _db.collection('calls').where(field, isEqualTo: uid).get();
+        for (final callDoc in callsSnap.docs) {
+          await PushNotificationService.cancelCallNotification(callDoc.id);
+          try {
+            await callDoc.reference.delete();
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    // 6. Delete user subcollections (trophies, achievements, processedMatches, private)
+    for (final sub in const [
+      'trophies',
+      'achievements',
+      'processedMatches',
+      'private',
+    ]) {
+      try {
+        final snap = await userRef.collection(sub).get();
+        for (final doc in snap.docs) {
+          try {
+            await doc.reference.delete();
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    // 7. Delete friendCode, leaderboardEntries, stats, and users/{uid}
+    if (friendCode.isNotEmpty) {
+      try {
+        await _db.collection('friendCodes').doc(friendCode).delete();
+      } catch (_) {}
+    }
+    try {
+      await _db.collection('leaderboardEntries').doc(uid).delete();
+    } catch (_) {}
+    try {
+      await _db.collection('stats').doc(uid).delete();
+    } catch (_) {}
+    try {
+      await userRef.delete();
+    } catch (_) {}
+
+    // 8. Reset all local settings & caches
+    chatRepository.resetLocalCaches();
+    await preferences.resetAllSettingsToDefault();
+
+    // 9. Delete Firebase Auth user (or sign out) and sign in with a brand-new anonymous UID
+    try {
+      await _auth.currentUser?.delete();
+    } catch (_) {
+      try {
+        await _auth.signOut();
+      } catch (_) {}
+    }
+    if (_auth.currentUser == null) {
+      await _auth.signInAnonymously();
+    }
+
+    // 10. Provision brand-new default system profile
+    return ensureProfile();
   }
 
   Future<Map<String, dynamic>?> fetchPrivatePreferences() async {
