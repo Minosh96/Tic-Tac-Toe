@@ -97,50 +97,88 @@ class _ProfilePageState extends State<ProfilePage> {
         builder: (ctx, setDialogState) {
           final scheme = Theme.of(ctx).colorScheme;
           return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+            contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             title: Text(
-              isRegister
-                  ? 'Register Player Profile'
-                  : 'Login with Existing User',
+              isRegister ? 'Register New User' : 'Login with Existing User',
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
             ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      'Minimum character requirements:\n'
-                      '• Username: at least 4 characters (letters, numbers, _ or .)\n'
-                      '• Password: at least 6 characters',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                  // Top error banner immediately visible even when keyboard is up
+                  if (errText != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: scheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: scheme.error, width: 1.4),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            color: scheme.error,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              errText!,
+                              style: TextStyle(
+                                color: scheme.onErrorContainer,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ],
+                  Text(
+                    'Min 4 chars for Username • Min 6 chars for Password',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: userCtrl,
                     maxLength: 20,
                     autocorrect: false,
+                    textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
-                      labelText: 'Username (min 4 characters)',
+                      labelText: 'Username (min 4 chars)',
                       prefixIcon: Icon(Icons.person_outline_rounded),
+                      isDense: true,
+                      counterText: '',
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: passCtrl,
                     obscureText: obscure,
                     maxLength: 64,
+                    textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
-                      labelText: 'Password (min 6 characters)',
+                      labelText: 'Password (min 6 chars)',
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      isDense: true,
+                      counterText: '',
                       suffixIcon: IconButton(
                         icon: Icon(
                           obscure
@@ -152,17 +190,6 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     ),
                   ),
-                  if (errText != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      errText!,
-                      style: TextStyle(
-                        color: scheme.error,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -175,6 +202,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 onPressed: busy
                     ? null
                     : () async {
+                        FocusScope.of(ctx).unfocus();
                         final uErr =
                             ProfileRepository.validateUsername(userCtrl.text);
                         if (uErr != null) {
@@ -233,7 +261,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 label: Text(
                   busy
                       ? (isRegister ? 'Registering…' : 'Signing in…')
-                      : (isRegister ? 'Register Profile' : 'Login'),
+                      : (isRegister ? 'Register New User' : 'Login'),
                 ),
               ),
             ],
@@ -547,13 +575,21 @@ class _ProfilePageState extends State<ProfilePage> {
                                       ?.copyWith(fontWeight: FontWeight.w900),
                                 ),
                                 const SizedBox(height: 4),
-                                Text(
-                                  'Favorite Symbol: ${profile?.preferredEmoji ?? '❌'}',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: scheme.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                StreamBuilder<List<FriendEntry>>(
+                                  stream: widget.services.friends
+                                      .watchFriends(uid),
+                                  builder: (context, friendsSnap) {
+                                    final friendCount =
+                                        friendsSnap.data?.length ?? 0;
+                                    return Text(
+                                      'Favorite Symbol: ${profile?.preferredEmoji ?? '❌'} • 👥 $friendCount ${friendCount == 1 ? 'Friend' : 'Friends'}',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: scheme.primary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    );
+                                  },
                                 ),
                                 if (profile != null &&
                                     profile.friendCode.isNotEmpty) ...[
@@ -629,7 +665,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                           size: 18,
                                         ),
                                         label: const Text(
-                                          'Register Username & Password',
+                                          'Register New User',
                                         ),
                                       ),
                                       OutlinedButton.icon(
@@ -983,7 +1019,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         Card(
                           child: ListTile(
                             leading: const Icon(Icons.info_outline_rounded),
-                            title: const Text('About Melow Tic Tac Toe v3.8'),
+                            title: const Text('About Melow Tic Tac Toe v3.8.1'),
                             trailing: const Icon(Icons.chevron_right_rounded),
                             onTap: () => Navigator.push(
                               context,

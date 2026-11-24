@@ -120,49 +120,89 @@ class _SplashScreenState extends State<SplashScreen>
         builder: (ctx, setDialogState) {
           final scheme = Theme.of(ctx).colorScheme;
           return AlertDialog(
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+            contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             title: Text(
-              isRegister
-                  ? 'Register Username & Password'
-                  : 'Login with Existing User',
+              isRegister ? 'Register New User' : 'Login with Existing User',
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
             ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Text(
-                      '• Username: Minimum 4 characters (letters, numbers, _ or .)\n'
-                      '• Password: Minimum 6 characters',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                  // Error banner placed right at the TOP so it is immediately
+                  // visible above the on-screen keyboard without scrolling!
+                  if (dialogError != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: scheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: scheme.error, width: 1.4),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            color: scheme.error,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              dialogError!,
+                              style: TextStyle(
+                                color: scheme.onErrorContainer,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ],
+                  Text(
+                    'Min 4 chars for Username • Min 6 chars for Password',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: userCtrl,
                     maxLength: 20,
                     autocorrect: false,
+                    textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
-                      labelText: 'Username (min 4 characters)',
+                      labelText: 'Username (min 4 chars)',
                       prefixIcon: Icon(Icons.person_outline_rounded),
+                      isDense: true,
+                      counterText: '',
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: passCtrl,
                     obscureText: obscure,
                     maxLength: 64,
+                    textInputAction: TextInputAction.done,
                     decoration: InputDecoration(
-                      labelText: 'Password (min 6 characters)',
+                      labelText: 'Password (min 6 chars)',
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      isDense: true,
+                      counterText: '',
                       suffixIcon: IconButton(
                         icon: Icon(
                           obscure
@@ -174,17 +214,6 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                     ),
                   ),
-                  if (dialogError != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      dialogError!,
-                      style: TextStyle(
-                        color: scheme.error,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -197,6 +226,7 @@ class _SplashScreenState extends State<SplashScreen>
                 onPressed: submitting
                     ? null
                     : () async {
+                        FocusScope.of(ctx).unfocus();
                         final uErr =
                             ProfileRepository.validateUsername(userCtrl.text);
                         if (uErr != null) {
@@ -485,7 +515,7 @@ class _SplashScreenState extends State<SplashScreen>
                                     ),
                                   ),
                                   const SizedBox(height: 10),
-                                  // Option 3: Create Username & Password
+                                  // Option 3: Register New User
                                   OutlinedButton.icon(
                                     style: OutlinedButton.styleFrom(
                                       minimumSize: const Size.fromHeight(48),
@@ -496,7 +526,7 @@ class _SplashScreenState extends State<SplashScreen>
                                     ),
                                     icon: const Icon(Icons.how_to_reg_rounded),
                                     label: const Text(
-                                      'Add Username & Password',
+                                      'Register New User',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w800,
                                       ),

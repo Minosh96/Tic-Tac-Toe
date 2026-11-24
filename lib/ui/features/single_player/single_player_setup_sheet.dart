@@ -275,31 +275,42 @@ class _SinglePlayerSetupSheetState extends State<SinglePlayerSetupSheet> {
                 ),
               ),
               const SizedBox(height: 12),
-              // 5A. My Symbol
+              // 5A. My Symbol: "My Symbol   [current symbol]   Choose"
               Row(
                 children: [
                   const Text(
                     'My Symbol',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(width: 10),
-                  ChoiceChip(
-                    label: const Text('❌ X'),
-                    selected: _myEmoji == '❌',
-                    onSelected: (_) => _setMyEmoji('❌'),
-                  ),
-                  const SizedBox(width: 6),
-                  ChoiceChip(
-                    label: const Text('⭕ O'),
-                    selected: _myEmoji == '⭕',
-                    onSelected: (_) => _setMyEmoji('⭕'),
+                  const SizedBox(width: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: scheme.primary.withValues(alpha: 0.45),
+                      ),
+                    ),
+                    child: Text(
+                      _myEmoji,
+                      style: const TextStyle(fontSize: 22),
+                    ),
                   ),
                   const Spacer(),
-                  TextButton.icon(
+                  FilledButton.tonalIcon(
                     onPressed: () => setState(
                       () => _showMyEmojiGrid = !_showMyEmojiGrid,
                     ),
-                    icon: Text(_myEmoji, style: const TextStyle(fontSize: 20)),
+                    icon: Icon(
+                      _showMyEmojiGrid
+                          ? Icons.expand_less_rounded
+                          : Icons.emoji_emotions_outlined,
+                      size: 18,
+                    ),
                     label: Text(_showMyEmojiGrid ? 'Hide' : 'Choose'),
                   ),
                 ],
@@ -313,37 +324,42 @@ class _SinglePlayerSetupSheetState extends State<SinglePlayerSetupSheet> {
                 ),
               ],
               const SizedBox(height: 8),
-              // 5B. Bot Symbol
+              // 5B. Bot Symbol: "Bot Symbol   [current symbol]   Choose"
               Row(
                 children: [
                   const Text(
                     'Bot Symbol',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(width: 10),
-                  ChoiceChip(
-                    label: const Text('⭕ O'),
-                    selected: _botEmoji == '⭕',
-                    onSelected: (_) => _setBotEmoji('⭕'),
-                  ),
-                  const SizedBox(width: 6),
-                  ChoiceChip(
-                    label: const Text('❌ X'),
-                    selected: _botEmoji == '❌',
-                    onSelected: (_) => _setBotEmoji('❌'),
-                  ),
-                  const SizedBox(width: 6),
-                  ChoiceChip(
-                    label: const Text('🤖'),
-                    selected: _botEmoji == '🤖',
-                    onSelected: (_) => _setBotEmoji('🤖'),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: scheme.primary.withValues(alpha: 0.45),
+                      ),
+                    ),
+                    child: Text(
+                      _botEmoji,
+                      style: const TextStyle(fontSize: 22),
+                    ),
                   ),
                   const Spacer(),
-                  TextButton.icon(
+                  FilledButton.tonalIcon(
                     onPressed: () => setState(
                       () => _showBotEmojiGrid = !_showBotEmojiGrid,
                     ),
-                    icon: Text(_botEmoji, style: const TextStyle(fontSize: 20)),
+                    icon: Icon(
+                      _showBotEmojiGrid
+                          ? Icons.expand_less_rounded
+                          : Icons.emoji_emotions_outlined,
+                      size: 18,
+                    ),
                     label: Text(_showBotEmojiGrid ? 'Hide' : 'Choose'),
                   ),
                 ],
