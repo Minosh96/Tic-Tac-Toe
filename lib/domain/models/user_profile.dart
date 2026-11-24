@@ -43,6 +43,7 @@ class UserProfile {
     this.profileVisibility = ProfileVisibility.public,
     this.hidePhotoGlobally = false,
     this.hideNameGlobally = false,
+    this.allowGlobalFriendRequests = true,
     this.registeredUsername,
     this.createdAt,
     this.updatedAt,
@@ -59,6 +60,7 @@ class UserProfile {
   final ProfileVisibility profileVisibility;
   final bool hidePhotoGlobally;
   final bool hideNameGlobally;
+  final bool allowGlobalFriendRequests;
   final String? registeredUsername;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -128,6 +130,7 @@ class UserProfile {
       profileVisibility: vis,
       hidePhotoGlobally: data['hidePhotoGlobally'] == true,
       hideNameGlobally: data['hideNameGlobally'] == true,
+      allowGlobalFriendRequests: data['allowGlobalFriendRequests'] != false,
       registeredUsername: data['registeredUsername'] as String?,
       createdAt: data['createdAt'] is Timestamp
           ? (data['createdAt'] as Timestamp).toDate()

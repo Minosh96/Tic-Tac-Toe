@@ -72,68 +72,44 @@ class GroupRepository {
     });
   }
 
-  /// Creates a new Friend Group of up to 5 members (including the creator)
-  /// using the provided friend codes.
-  Future<String> createGroupByFriendCodes({
+  /// Creates a new Friend Group using the creator's own Friend Code (`creator.friendCode`)
+  /// so the creator simply enters a Group Name, chooses the maximum number of members (2..5),
+  /// and shares their Friend Code for others to enter and join the group!
+  Future<String> createGroupWithMyFriendCode({
     required UserProfile creator,
     required String groupName,
-    required List<String> friendCodes,
+    required int maxMembers,
     String cupName = 'Melow Challenge Champion Cup',
   }) async {
     final cleanName = groupName.trim();
     if (cleanName.isEmpty || cleanName.length > 24) {
       throw Exception('Enter a group name (1–24 characters).');
     }
-
-    final resolvedMembers = <String, UserProfile>{creator.uid: creator};
-    for (final rawCode in friendCodes) {
-      final code = rawCode.trim().toUpperCase();
-      if (code.isEmpty) continue;
-      if (code == creator.friendCode.toUpperCase()) continue;
-      final found = await friendsRepository.findUserByFriendCode(code);
-      if (found == null) {
-        throw Exception('No player found with friend code "$code".');
-      }
-      resolvedMembers[found.uid] = found;
-      if (resolvedMembers.length >= FriendGroup.maxMembers) break;
+    final code = creator.friendCode.trim().toUpperCase();
+    if (code.length < 6) {
+      throw Exception('Your friend code is not ready yet. Please try again.');
     }
+    final cap = maxMembers.clamp(2, FriendGroup.maxAllowedMembers);
 
-    if (resolvedMembers.length < 2) {
-      throw Exception(
-        'Add at least 1 friend code (2 to 5 total group members).',
-      );
-    }
-    if (resolvedMembers.length > FriendGroup.maxMembers) {
-      throw Exception('A group can have a maximum of 5 members.');
-    }
-
-    final memberUids = resolvedMembers.keys.toList(growable: false);
-    final memberNames = <String, String>{
-      for (final m in resolvedMembers.values) m.uid: m.nickname,
-    };
-    final memberAvatars = <String, String>{
-      for (final m in resolvedMembers.values) m.uid: m.avatarId,
-    };
-    final zeroMap = <String, int>{
-      for (final uid in memberUids) uid: 0,
-    };
-
-    final docRef = _db.collection('groups').doc();
+    final docRef = _groupRef(code);
     await docRef.set({
       'name': cleanName,
       'creatorUid': creator.uid,
-      'memberUids': memberUids,
-      'memberNames': memberNames,
-      'memberAvatars': memberAvatars,
+      'hostFriendCode': code,
+      'maxMembers': cap,
+      'memberUids': <String>[creator.uid],
+      'memberNames': <String, String>{creator.uid: creator.nickname},
+      'memberAvatars': <String, String>{creator.uid: creator.avatarId},
       'tournamentStatus': 'active',
       'championUid': '',
       'championName': '',
       'cupName': cupName,
-      'winsByUid': zeroMap,
-      'lossesByUid': zeroMap,
-      'drawsByUid': zeroMap,
-      'cupsByUid': zeroMap,
-      'lastMessage': '🏆 Group created! Initiate a match or start the Final!',
+      'winsByUid': <String, int>{creator.uid: 0},
+      'lossesByUid': <String, int>{creator.uid: 0},
+      'drawsByUid': <String, int>{creator.uid: 0},
+      'cupsByUid': <String, int>{creator.uid: 0},
+      'lastMessage':
+          '🏆 Group "$cleanName" created! Share code $code for up to $cap players to join!',
       'lastSenderUid': creator.uid,
       'lastSenderName': creator.nickname,
       'lastMessageAt': FieldValue.serverTimestamp(),
@@ -141,6 +117,69 @@ class GroupRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     });
     return docRef.id;
+  }
+
+  /// Joins an existing Friend Group using the host's shared Friend Code!
+  Future<FriendGroup> joinGroupByFriendCode({
+    required UserProfile me,
+    required String friendCode,
+  }) async {
+    final code = friendCode.trim().toUpperCase();
+    if (code.length < 6) {
+      throw Exception('Enter a valid friend code to join the group.');
+    }
+
+    final ref = _groupRef(code);
+    final snap = await ref.get();
+    if (!snap.exists || snap.data() == null) {
+      throw Exception(
+        'No active group found for code "$code". Ask your friend to create a group with their code first!',
+      );
+    }
+
+    final group = FriendGroup.fromFirestore(snap);
+    if (group.memberUids.contains(me.uid)) {
+      return group;
+    }
+    if (group.memberUids.length >= group.maxMembers) {
+      throw Exception(
+        'Group "${group.name}" is already full (${group.maxMembers}/${group.maxMembers} members).',
+      );
+    }
+
+    await ref.update({
+      'memberUids': FieldValue.arrayUnion([me.uid]),
+      'memberNames.${me.uid}': me.nickname,
+      'memberAvatars.${me.uid}': me.avatarId,
+      'winsByUid.${me.uid}': 0,
+      'lossesByUid.${me.uid}': 0,
+      'drawsByUid.${me.uid}': 0,
+      'cupsByUid.${me.uid}': 0,
+      'lastMessage': '👋 ${me.nickname} joined the group!',
+      'lastSenderUid': me.uid,
+      'lastSenderName': me.nickname,
+      'lastMessageAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    final updated = await ref.get();
+    return FriendGroup.fromFirestore(updated);
+  }
+
+  /// Creates a new Friend Group of up to 5 members (including the creator)
+  /// using the provided friend codes (legacy helper kept for compatibility).
+  Future<String> createGroupByFriendCodes({
+    required UserProfile creator,
+    required String groupName,
+    required List<String> friendCodes,
+    String cupName = 'Melow Challenge Champion Cup',
+  }) async {
+    return createGroupWithMyFriendCode(
+      creator: creator,
+      groupName: groupName,
+      maxMembers: (friendCodes.length + 1).clamp(2, 5),
+      cupName: cupName,
+    );
   }
 
   /// Adds a new member to an existing group by Friend Code (up to 5 members max).
@@ -163,8 +202,10 @@ class GroupRepository {
     if (group.memberUids.contains(found.uid)) {
       throw Exception('${found.nickname} is already in this group.');
     }
-    if (group.memberUids.length >= FriendGroup.maxMembers) {
-      throw Exception('Group already has the maximum of 5 members.');
+    if (group.memberUids.length >= group.maxMembers) {
+      throw Exception(
+        'Group already has the maximum of ${group.maxMembers} members.',
+      );
     }
 
     await ref.update({

@@ -448,6 +448,7 @@ class LeaderboardEntry {
     required this.bestStreak,
     required this.blitzWins,
     required this.optIn,
+    this.allowFriendRequests = true,
   });
 
   final String uid;
@@ -459,6 +460,7 @@ class LeaderboardEntry {
   final int bestStreak;
   final int blitzWins;
   final bool optIn;
+  final bool allowFriendRequests;
 
   int scoreFor(LeaderboardMetric metric) {
     switch (metric) {
@@ -487,6 +489,7 @@ class LeaderboardEntry {
       bestStreak: (data['bestStreak'] as num?)?.toInt() ?? 0,
       blitzWins: (data['blitzWins'] as num?)?.toInt() ?? 0,
       optIn: data['optIn'] == true,
+      allowFriendRequests: data['allowFriendRequests'] != false,
     );
   }
 }

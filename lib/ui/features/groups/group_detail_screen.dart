@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/services/app_services.dart';
@@ -580,7 +581,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                         ),
                       ),
                       Text(
-                        '${group.memberUids.length}/${FriendGroup.maxMembers} Members • ${group.cupName}',
+                        '${group.memberUids.length}/${group.maxMembers} Members • Code: ${group.hostFriendCode}',
                         style: TextStyle(
                           fontSize: 11,
                           color: scheme.onSurfaceVariant,
@@ -589,13 +590,25 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     ],
                   ),
                   actions: [
+                    IconButton(
+                      tooltip: 'Copy Group Friend Code',
+                      icon: const Icon(Icons.copy_rounded),
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: group.hostFriendCode),
+                        );
+                        _snack(
+                          'Group Friend Code ${group.hostFriendCode} copied! Share with up to ${group.maxMembers} members.',
+                        );
+                      },
+                    ),
                     if (me != null)
                       IconButton(
                         tooltip: 'Group Voice Call',
                         icon: const Icon(Icons.call_rounded),
                         onPressed: () => _openGroupCallPicker(group, me),
                       ),
-                    if (group.memberUids.length < FriendGroup.maxMembers)
+                    if (group.memberUids.length < group.maxMembers)
                       IconButton(
                         tooltip: 'Add member by Friend Code',
                         icon: const Icon(Icons.person_add_alt_1_rounded),
@@ -849,13 +862,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                 ),
                               ),
                             ),
-                            if (group.memberUids.length <
-                                FriendGroup.maxMembers)
+                            if (group.memberUids.length < group.maxMembers)
                               TextButton.icon(
-                                onPressed: () => _openAddMemberDialog(group),
-                                icon: const Icon(Icons.person_add_rounded,
-                                    size: 16),
-                                label: const Text('Add Code'),
+                                onPressed: () async {
+                                  await Clipboard.setData(
+                                    ClipboardData(text: group.hostFriendCode),
+                                  );
+                                  _snack(
+                                    'Group Code ${group.hostFriendCode} copied! Share with friends to join.',
+                                  );
+                                },
+                                icon: const Icon(Icons.copy_rounded, size: 16),
+                                label: Text('Code: ${group.hostFriendCode}'),
                               ),
                           ],
                         ),

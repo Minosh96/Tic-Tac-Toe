@@ -541,6 +541,8 @@ class GameRepository {
 
       final globalOptIn =
           isPublicVis && (userData['leaderboardOptIn'] != false);
+      final allowFriendReqs =
+          isPublicVis && (userData['allowGlobalFriendRequests'] != false);
 
       await leaderboardRef.set({
         'publicNickname': globalNick,
@@ -551,6 +553,7 @@ class GameRepository {
         'bestStreak': nextBestStreak,
         'blitzWins': nextBlitzWins,
         'optIn': globalOptIn,
+        'allowFriendRequests': allowFriendReqs,
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (_) {}

@@ -537,7 +537,7 @@ class _HomePageState extends State<HomePage> {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Welcome back, ${profile?.nickname ?? 'Challenger'}!',
+                                          'Welcome, ${profile?.nickname ?? 'Challenger'}!',
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 18,

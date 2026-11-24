@@ -282,6 +282,39 @@ class SettingsScreen extends StatelessWidget {
                                             profile.hidePhotoGlobally,
                                         hideNameGlobally:
                                             profile.hideNameGlobally,
+                                        allowGlobalFriendRequests:
+                                            profile.allowGlobalFriendRequests,
+                                      ),
+                            ),
+                            const Divider(height: 1),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              secondary:
+                                  const Icon(Icons.person_add_alt_1_rounded),
+                              title: const Text(
+                                'Allow Add Friend from Global List',
+                              ),
+                              subtitle: const Text(
+                                'Enable or disable other players sending you friend requests from Global Top 100 rankings',
+                              ),
+                              value: profile.isPublic &&
+                                  profile.allowGlobalFriendRequests,
+                              onChanged: !profile.isPublic
+                                  ? null
+                                  : (v) => services.profile.updateProfile(
+                                        nickname: profile.nickname,
+                                        avatarId: profile.avatarId,
+                                        preferredEmoji: profile.preferredEmoji,
+                                        publicProfileEnabled: profile.isPublic,
+                                        leaderboardOptIn:
+                                            profile.leaderboardOptIn,
+                                        profileVisibility:
+                                            profile.profileVisibility,
+                                        hidePhotoGlobally:
+                                            profile.hidePhotoGlobally,
+                                        hideNameGlobally:
+                                            profile.hideNameGlobally,
+                                        allowGlobalFriendRequests: v,
                                       ),
                             ),
                             const SizedBox(height: 8),
@@ -464,7 +497,7 @@ class SettingsScreen extends StatelessWidget {
                     child: ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('About Melow Tic Tac Toe'),
-                      subtitle: const Text('Version 3.7.0 • Melow Labs'),
+                      subtitle: const Text('Version 3.8.0 • Melow Labs'),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => Navigator.push(
                         context,

@@ -10,6 +10,7 @@ import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
 import '../../core/widgets/live_user_avatar.dart';
 import '../../core/widgets/melow_avatar.dart';
+import '../../core/widgets/notification_bell_button.dart';
 import '../chat/friend_chat_screen.dart';
 import '../chat/voice_call_screen.dart';
 import '../groups/group_detail_screen.dart';
@@ -46,10 +47,7 @@ class _FriendsPageState extends State<FriendsPage> {
 
   Future<void> _openCreateGroupDialog(UserProfile me) async {
     final nameCtrl = TextEditingController();
-    final codeCtrls = List<TextEditingController>.generate(
-      4,
-      (_) => TextEditingController(),
-    );
+    int maxMembers = 5;
     bool creating = false;
     String? errorMsg;
 
@@ -59,17 +57,41 @@ class _FriendsPageState extends State<FriendsPage> {
         builder: (ctx, setDialogState) {
           final scheme = Theme.of(ctx).colorScheme;
           return AlertDialog(
-            title: const Text('Create Friend Group (Max 5)'),
+            title: const Text('Create Group with My Code'),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Create a group of up to 5 players (You + up to 4 Friend Codes). Play 2-player matches, compete in the Final Match for the Melow Challenge Champion Cup 🏆, and use Group Chat & Calls!',
+                    'Create a group using your Friend Code (${me.friendCode}). Share your code with friends so up to $maxMembers members can enter it, join the group, and play for the Melow Challenge Champion Cup 🏆!',
                     style: TextStyle(
                       fontSize: 12,
                       color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.vpn_key_rounded, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Group Code: ${me.friendCode}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: scheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -82,31 +104,29 @@ class _FriendsPageState extends State<FriendsPage> {
                       prefixIcon: Icon(Icons.groups_rounded),
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   const Text(
-                    'Add Member Friend Codes (Up to 4 Friends + You = 5 Max)',
+                    'Maximum Number of Members (2–5)',
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: 12,
+                      fontSize: 13,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  for (var i = 0; i < codeCtrls.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: TextField(
-                        controller: codeCtrls[i],
-                        textCapitalization: TextCapitalization.characters,
-                        decoration: InputDecoration(
-                          labelText:
-                              'Member ${i + 2} Friend Code ${i == 0 ? '(Required)' : '(Optional)'}',
-                          prefixIcon: const Icon(Icons.vpn_key_rounded),
-                          isDense: true,
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final count in const [2, 3, 4, 5])
+                        ChoiceChip(
+                          label: Text('$count Players'),
+                          selected: maxMembers == count,
+                          onSelected: (_) =>
+                              setDialogState(() => maxMembers = count),
                         ),
-                      ),
-                    ),
+                    ],
+                  ),
                   if (errorMsg != null) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Text(
                       errorMsg!,
                       style: TextStyle(
@@ -133,15 +153,11 @@ class _FriendsPageState extends State<FriendsPage> {
                           errorMsg = null;
                         });
                         try {
-                          final codes = codeCtrls
-                              .map((c) => c.text.trim())
-                              .where((c) => c.isNotEmpty)
-                              .toList(growable: false);
                           final groupId = await widget.services.groups
-                              .createGroupByFriendCodes(
+                              .createGroupWithMyFriendCode(
                             creator: me,
                             groupName: nameCtrl.text,
-                            friendCodes: codes,
+                            maxMembers: maxMembers,
                           );
                           if (ctx.mounted) Navigator.pop(ctx);
                           if (!mounted) return;
@@ -174,9 +190,107 @@ class _FriendsPageState extends State<FriendsPage> {
       ),
     );
     nameCtrl.dispose();
-    for (final c in codeCtrls) {
-      c.dispose();
-    }
+  }
+
+  Future<void> _openJoinGroupByCodeDialog(UserProfile me) async {
+    final codeCtrl = TextEditingController();
+    bool joining = false;
+    String? errorMsg;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return AlertDialog(
+            title: const Text('Join Friend Group by Code'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Enter the Friend Code shared by the group creator to join their group and compete for the Melow Challenge Champion Cup 🏆!',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: codeCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    maxLength: 10,
+                    decoration: const InputDecoration(
+                      labelText: 'Host Friend Code',
+                      hintText: '8-character code',
+                      prefixIcon: Icon(Icons.vpn_key_rounded),
+                    ),
+                  ),
+                  if (errorMsg != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      errorMsg!,
+                      style: TextStyle(
+                        color: scheme.error,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: joining ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: joining
+                    ? null
+                    : () async {
+                        setDialogState(() {
+                          joining = true;
+                          errorMsg = null;
+                        });
+                        try {
+                          final group = await widget.services.groups
+                              .joinGroupByFriendCode(
+                            me: me,
+                            friendCode: codeCtrl.text,
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (!mounted) return;
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => GroupDetailScreen(
+                                services: widget.services,
+                                groupId: group.id,
+                              ),
+                            ),
+                          );
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            setDialogState(() {
+                              joining = false;
+                              errorMsg = e
+                                  .toString()
+                                  .replaceFirst('Exception: ', '');
+                            });
+                          }
+                        }
+                      },
+                icon: const Icon(Icons.login_rounded),
+                label: Text(joining ? 'Joining…' : 'Join Group'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    codeCtrl.dispose();
   }
 
   Future<void> _searchByCode() async {
@@ -374,7 +488,15 @@ class _FriendsPageState extends State<FriendsPage> {
       builder: (context, meSnap) {
         final me = meSnap.data;
         return Scaffold(
-          appBar: AppBar(title: const Text('Friends & Chat')),
+          appBar: AppBar(
+            title: const Text('Friends & Chat'),
+            actions: [
+              NotificationBellIconButton(
+                services: widget.services,
+                me: me,
+              ),
+            ],
+          ),
           body: SafeArea(
             child: Center(
               child: ConstrainedBox(
@@ -516,24 +638,31 @@ class _FriendsPageState extends State<FriendsPage> {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    // Friend Groups Section (Max 5 Members, 2-Player Matches, Final Match for Melow Challenge Champion Cup, Group Chat & Calls)
+                    // Friend Groups Section (Create Group with My Code or Join Group by Code)
                     Row(
                       children: [
                         const Expanded(
                           child: Text(
-                            '🏆 Friend Groups (Max 5)',
+                            '🏆 Friend Groups (2–5 Players)',
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 16,
                             ),
                           ),
                         ),
-                        if (me != null)
+                        if (me != null) ...[
+                          OutlinedButton.icon(
+                            onPressed: () => _openJoinGroupByCodeDialog(me),
+                            icon: const Icon(Icons.vpn_key_rounded, size: 16),
+                            label: const Text('Join Group'),
+                          ),
+                          const SizedBox(width: 6),
                           FilledButton.tonalIcon(
                             onPressed: () => _openCreateGroupDialog(me),
                             icon: const Icon(Icons.group_add_rounded, size: 18),
-                            label: const Text('Create Group'),
+                            label: const Text('Create'),
                           ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -549,11 +678,11 @@ class _FriendsPageState extends State<FriendsPage> {
                                 style: TextStyle(fontSize: 28),
                               ),
                               title: const Text(
-                                'Create a 5-Player Friend Group',
+                                'Create or Join a Friend Group with Your Code',
                                 style: TextStyle(fontWeight: FontWeight.w800),
                               ),
                               subtitle: const Text(
-                                'Add up to 5 members by friend code, play 2-player matches & a Final Match for the Melow Challenge Champion Cup, with Group Chat & Calls!',
+                                'Create a group with your Friend Code (choose 2 to 5 max members) and share your code for friends to join and play for the Melow Challenge Champion Cup!',
                               ),
                               trailing: const Icon(Icons.chevron_right_rounded),
                               onTap: me == null
@@ -575,7 +704,7 @@ class _FriendsPageState extends State<FriendsPage> {
                                       child: const Text('🏆'),
                                     ),
                                     title: Text(
-                                      g.name,
+                                      '${g.name} (Code: ${g.hostFriendCode})',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w800,
                                       ),
@@ -583,8 +712,8 @@ class _FriendsPageState extends State<FriendsPage> {
                                     subtitle: Text(
                                       g.tournamentStatus == 'completed' &&
                                               g.championName.isNotEmpty
-                                          ? 'Champion: ${g.championName} 🏆 • ${g.memberUids.length}/5 Members'
-                                          : '${g.memberUids.length}/5 Members • ${g.lastMessage.isNotEmpty ? g.lastMessage : g.cupName}',
+                                          ? 'Champion: ${g.championName} 🏆 • ${g.memberUids.length}/${g.maxMembers} Members'
+                                          : '${g.memberUids.length}/${g.maxMembers} Members • ${g.lastMessage.isNotEmpty ? g.lastMessage : g.cupName}',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),

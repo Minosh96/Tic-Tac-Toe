@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 3.7.0 (Build 15)',
+            'Version 3.8.0 (Build 16)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -39,13 +39,22 @@ class AboutScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'What’s New in Version 3.7',
+                    'What’s New in Version 3.8',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 10),
+                  const _Bullet(
+                    text: 'Create a Friend Group with your own Friend Code (choose 2–5 max members) and share your code for friends to join & play',
+                  ),
+                  const _Bullet(
+                    text: 'Send Friend Requests directly to players on the Global Top 100 list (with an enable/disable toggle in Privacy Settings)',
+                  ),
+                  const _Bullet(
+                    text: 'Redesigned neon arcade Login Screen background & live Notification Bell with Clear All across all tabs',
+                  ),
                   const _Bullet(
                     text: '5-Player Friend Groups with 2-player matches, Final Match for the Melow Challenge Champion Cup 🏆, Group Rankings, Group Chat & Group Voice Calls',
                   ),

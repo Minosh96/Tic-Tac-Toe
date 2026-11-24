@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import '../../../core/services/app_services.dart';
 import '../../../data/repositories/leaderboard_repository.dart';
 import '../../../domain/models/social_models.dart';
+import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
 import '../../core/widgets/melow_avatar.dart';
+import '../../core/widgets/notification_bell_button.dart';
 
-/// Melow v3.0 Global & Friends Verified Leaderboards with crisp mobile layout.
+/// Melow v3.8 Global & Friends Verified Leaderboards with direct "Add Friend"
+/// action on Global Top 100 users (respecting each player's privacy setting).
 class LeaderboardPage extends StatefulWidget {
   const LeaderboardPage({super.key, required this.services});
 
@@ -28,11 +31,19 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
   List<LeaderboardEntry> _entries = const [];
   DocumentSnapshot<Map<String, dynamic>>? _lastDoc;
   bool _hasMore = false;
+  final Set<String> _sentRequestUids = <String>{};
 
   @override
   void initState() {
     super.initState();
     _loadInitial();
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _loadInitial() async {
@@ -104,6 +115,24 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
     }
   }
 
+  Future<void> _sendFriendRequestToGlobalUser(
+    UserProfile me,
+    LeaderboardEntry entry,
+  ) async {
+    try {
+      await widget.services.friends.sendFriendRequestToLeaderboardEntry(
+        me: me,
+        entry: entry,
+      );
+      if (mounted) {
+        setState(() => _sentRequestUids.add(entry.uid));
+      }
+      _snack('Friend request sent to ${entry.publicNickname}!');
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
   String _medal(int rank) {
     if (rank == 1) return '🥇';
     if (rank == 2) return '🥈';
@@ -116,153 +145,208 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
     final myUid = widget.services.game.currentUid;
     final scheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Leaderboards'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh rankings',
-            onPressed: _loadInitial,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 580),
-            child: RefreshIndicator(
-              onRefresh: _loadInitial,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<String>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(
-                          value: 'global',
-                          icon: Icon(Icons.public_rounded, size: 18),
-                          label: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('Global Top 100'),
-                          ),
-                        ),
-                        ButtonSegment(
-                          value: 'friends',
-                          icon: Icon(Icons.groups_rounded, size: 18),
-                          label: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('Friends'),
-                          ),
-                        ),
-                      ],
-                      selected: {_scope},
-                      onSelectionChanged: (v) {
-                        setState(() => _scope = v.first);
-                        _loadInitial();
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (final m in LeaderboardMetric.values)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              label: Text(m.label),
-                              selected: _metric == m,
-                              onSelected: (_) {
-                                setState(() => _metric = m);
-                                _loadInitial();
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.all(40),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (_error != null)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          children: [
-                            const Icon(Icons.cloud_off_rounded, size: 42),
-                            const SizedBox(height: 8),
-                            Text(_error!, textAlign: TextAlign.center),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: _loadInitial,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
+    return StreamBuilder<UserProfile?>(
+      stream: widget.services.profile.watchProfile(myUid),
+      builder: (context, meSnap) {
+        final me = meSnap.data;
+        return StreamBuilder<List<FriendEntry>>(
+          stream: widget.services.friends.watchFriends(myUid),
+          builder: (context, friendsSnap) {
+            final friendUidSet = {
+              for (final f in (friendsSnap.data ?? const <FriendEntry>[]))
+                f.friendUid,
+            };
+            return StreamBuilder<List<FriendRequest>>(
+              stream: widget.services.friends.watchOutgoingRequests(myUid),
+              builder: (context, outReqSnap) {
+                final pendingOutSet = {
+                  ..._sentRequestUids,
+                  for (final r
+                      in (outReqSnap.data ?? const <FriendRequest>[]))
+                    r.receiverUid,
+                };
+                return Scaffold(
+                  appBar: AppBar(
+                    title: const Text('Leaderboards'),
+                    actions: [
+                      NotificationBellIconButton(
+                        services: widget.services,
+                        me: me,
                       ),
-                    )
-                  else if (_entries.isEmpty)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(28),
-                        child: Column(
-                          children: [
-                            const Text('🏆', style: TextStyle(fontSize: 44)),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'No verified rankings yet',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
+                      IconButton(
+                        tooltip: 'Refresh rankings',
+                        onPressed: _loadInitial,
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                    ],
+                  ),
+                  body: SafeArea(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 580),
+                        child: RefreshIndicator(
+                          onRefresh: _loadInitial,
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                            children: [
+                              SizedBox(
+                                width: double.infinity,
+                                child: SegmentedButton<String>(
+                                  showSelectedIcon: false,
+                                  segments: const [
+                                    ButtonSegment(
+                                      value: 'global',
+                                      icon:
+                                          Icon(Icons.public_rounded, size: 18),
+                                      label: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text('Global Top 100'),
+                                      ),
+                                    ),
+                                    ButtonSegment(
+                                      value: 'friends',
+                                      icon:
+                                          Icon(Icons.groups_rounded, size: 18),
+                                      label: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text('Friends'),
+                                      ),
+                                    ),
+                                  ],
+                                  selected: {_scope},
+                                  onSelectionChanged: (v) {
+                                    setState(() => _scope = v.first);
+                                    _loadInitial();
+                                  },
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Finish multiplayer tournaments to climb the ${_scope == 'global' ? 'Global' : 'Friends'} Leaderboard!',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: scheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else ...[
-                    for (var i = 0; i < _entries.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _LeaderboardRow(
-                          rankLabel: _medal(i + 1),
-                          entry: _entries[i],
-                          metric: _metric,
-                          isMe: _entries[i].uid == myUid,
-                        ),
-                      ),
-                    if (_hasMore)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: OutlinedButton(
-                          onPressed: _loadingMore ? null : _loadMore,
-                          child: Text(
-                            _loadingMore ? 'Loading more…' : 'Load More',
+                              const SizedBox(height: 12),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    for (final m in LeaderboardMetric.values)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(right: 8),
+                                        child: ChoiceChip(
+                                          label: Text(m.label),
+                                          selected: _metric == m,
+                                          onSelected: (_) {
+                                            setState(() => _metric = m);
+                                            _loadInitial();
+                                          },
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              if (_loading)
+                                const Padding(
+                                  padding: EdgeInsets.all(40),
+                                  child: Center(
+                                      child: CircularProgressIndicator()),
+                                )
+                              else if (_error != null)
+                                Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      children: [
+                                        const Icon(Icons.cloud_off_rounded,
+                                            size: 42),
+                                        const SizedBox(height: 8),
+                                        Text(_error!,
+                                            textAlign: TextAlign.center),
+                                        const SizedBox(height: 12),
+                                        FilledButton(
+                                          onPressed: _loadInitial,
+                                          child: const Text('Retry'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              else if (_entries.isEmpty)
+                                Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(28),
+                                    child: Column(
+                                      children: [
+                                        const Text('🏆',
+                                            style: TextStyle(fontSize: 44)),
+                                        const SizedBox(height: 8),
+                                        const Text(
+                                          'No verified rankings yet',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'Finish multiplayer tournaments to climb the ${_scope == 'global' ? 'Global' : 'Friends'} Leaderboard!',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                              color: scheme.onSurfaceVariant),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              else ...[
+                                for (var i = 0; i < _entries.length; i++)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: _LeaderboardRow(
+                                      rankLabel: _medal(i + 1),
+                                      entry: _entries[i],
+                                      metric: _metric,
+                                      isMe: _entries[i].uid == myUid,
+                                      isFriend: friendUidSet
+                                          .contains(_entries[i].uid),
+                                      isRequestPending: pendingOutSet
+                                          .contains(_entries[i].uid),
+                                      showAddFriendControl: _scope == 'global',
+                                      onAddFriend: (me == null ||
+                                              _entries[i].uid == myUid ||
+                                              !_entries[i].allowFriendRequests)
+                                          ? null
+                                          : () =>
+                                              _sendFriendRequestToGlobalUser(
+                                                me,
+                                                _entries[i],
+                                              ),
+                                    ),
+                                  ),
+                                if (_hasMore)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: OutlinedButton(
+                                      onPressed:
+                                          _loadingMore ? null : _loadMore,
+                                      child: Text(
+                                        _loadingMore
+                                            ? 'Loading more…'
+                                            : 'Load More',
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                              const MelowFooter(),
+                            ],
                           ),
                         ),
                       ),
-                  ],
-                  const MelowFooter(),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -273,12 +357,20 @@ class _LeaderboardRow extends StatelessWidget {
     required this.entry,
     required this.metric,
     required this.isMe,
+    required this.isFriend,
+    required this.isRequestPending,
+    required this.showAddFriendControl,
+    this.onAddFriend,
   });
 
   final String rankLabel;
   final LeaderboardEntry entry;
   final LeaderboardMetric metric;
   final bool isMe;
+  final bool isFriend;
+  final bool isRequestPending;
+  final bool showAddFriendControl;
+  final VoidCallback? onAddFriend;
 
   @override
   Widget build(BuildContext context) {
@@ -290,12 +382,12 @@ class _LeaderboardRow extends StatelessWidget {
         child: Row(
           children: [
             SizedBox(
-              width: 36,
+              width: 34,
               child: Center(
                 child: Text(
                   rankLabel,
                   style: const TextStyle(
-                    fontSize: 17,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -316,9 +408,9 @@ class _LeaderboardRow extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: AppTheme.goldAccent.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(14),
@@ -331,6 +423,44 @@ class _LeaderboardRow extends StatelessWidget {
                 ),
               ),
             ),
+            if (showAddFriendControl && !isMe) ...[
+              const SizedBox(width: 6),
+              if (isFriend)
+                Tooltip(
+                  message: 'Already Friends',
+                  child: Icon(
+                    Icons.people_alt_rounded,
+                    size: 20,
+                    color: scheme.primary,
+                  ),
+                )
+              else if (isRequestPending)
+                Tooltip(
+                  message: 'Friend Request Pending',
+                  child: Icon(
+                    Icons.hourglass_top_rounded,
+                    size: 20,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                )
+              else if (entry.allowFriendRequests)
+                IconButton.filledTonal(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Add Friend (${entry.publicNickname})',
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                  onPressed: onAddFriend,
+                )
+              else
+                Tooltip(
+                  message:
+                      '${entry.publicNickname} disabled global friend requests',
+                  child: Icon(
+                    Icons.person_off_outlined,
+                    size: 18,
+                    color: scheme.outline,
+                  ),
+                ),
+            ],
           ],
         ),
       ),

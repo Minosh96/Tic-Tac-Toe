@@ -222,6 +222,8 @@ class ProfileRepository {
       'profileVisibility': vis.id,
       'hidePhotoGlobally': existing.data()?['hidePhotoGlobally'] == true,
       'hideNameGlobally': existing.data()?['hideNameGlobally'] == true,
+      'allowGlobalFriendRequests':
+          existing.data()?['allowGlobalFriendRequests'] != false,
       'leaderboardOptIn': existing.data()?['leaderboardOptIn'] ?? true,
       'createdAt':
           existing.data()?['createdAt'] ?? FieldValue.serverTimestamp(),
@@ -256,6 +258,7 @@ class ProfileRepository {
     ProfileVisibility? profileVisibility,
     bool? hidePhotoGlobally,
     bool? hideNameGlobally,
+    bool? allowGlobalFriendRequests,
   }) async {
     final error = GameEngine.validateNickname(nickname);
     if (error != null) throw Exception(error);
@@ -277,6 +280,9 @@ class ProfileRepository {
         hidePhotoGlobally ?? existingProfile?.hidePhotoGlobally ?? false;
     final effectiveHideName =
         hideNameGlobally ?? existingProfile?.hideNameGlobally ?? false;
+    final effectiveAllowFriendRequests = allowGlobalFriendRequests ??
+        existingProfile?.allowGlobalFriendRequests ??
+        true;
     final effectivePhoto =
         updatePhoto ? photoBase64 : existingProfile?.photoBase64;
 
@@ -288,6 +294,7 @@ class ProfileRepository {
       'profileVisibility': effectiveVisibility.id,
       'hidePhotoGlobally': effectiveHidePhoto,
       'hideNameGlobally': effectiveHideName,
+      'allowGlobalFriendRequests': effectiveAllowFriendRequests,
       'leaderboardOptIn': leaderboardOptIn,
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -305,6 +312,7 @@ class ProfileRepository {
       visibility: effectiveVisibility,
       hidePhotoGlobally: effectiveHidePhoto,
       hideNameGlobally: effectiveHideName,
+      allowGlobalFriendRequests: effectiveAllowFriendRequests,
       leaderboardOptIn: leaderboardOptIn,
     );
   }
@@ -352,6 +360,7 @@ class ProfileRepository {
       visibility: nextVisibility,
       hidePhotoGlobally: nextHidePhoto,
       hideNameGlobally: nextHideName,
+      allowGlobalFriendRequests: current?.allowGlobalFriendRequests ?? true,
       leaderboardOptIn: nextLbOptIn,
     );
   }
@@ -364,6 +373,7 @@ class ProfileRepository {
     required ProfileVisibility visibility,
     required bool hidePhotoGlobally,
     required bool hideNameGlobally,
+    required bool allowGlobalFriendRequests,
     required bool leaderboardOptIn,
   }) async {
     final defaultName = UserProfile.defaultSystemNicknameFor(uid);
@@ -424,6 +434,7 @@ class ProfileRepository {
           'avatarId': globalAvatar,
           'photoBase64': globalPhoto,
           'optIn': globalOptIn,
+          'allowFriendRequests': isPublic && allowGlobalFriendRequests,
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
@@ -695,6 +706,8 @@ class ProfileRepository {
                   'bestStreak': resolved.bestStreak,
                   'blitzWins': resolved.blitzWins,
                   'optIn': p.isPublic && p.leaderboardOptIn,
+                  'allowFriendRequests':
+                      p.isPublic && p.allowGlobalFriendRequests,
                   'updatedAt': FieldValue.serverTimestamp(),
                 }, SetOptions(merge: true));
               }

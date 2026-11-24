@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ===============================================================
-// Assumed Data Model — Melow Tic Tac Toe v3.7.0
+// Assumed Data Model — Melow Tic Tac Toe v3.8.0
 // ===============================================================
 //
 // Collection: rooms/{roomId}
@@ -67,6 +67,7 @@ rules_version = '2';
 //   - profileVisibility: string (optional, nullable, 'public' | 'friends' | 'private')
 //   - hidePhotoGlobally: bool (optional, nullable)
 //   - hideNameGlobally: bool (optional, nullable)
+//   - allowGlobalFriendRequests: bool (optional, nullable)
 //   - registeredUsername: string (optional, nullable, 0..20)
 //   - createdAt: timestamp (optional, == request.time on create, immutable once set)
 //   - updatedAt: timestamp (optional)
@@ -191,6 +192,7 @@ rules_version = '2';
 //   - photoBase64: string (optional, nullable, 0..140000)
 //   - wins, tournamentsWon, bestStreak, blitzWins: int (0..1000000; +0..1 on update or bounded by stats/{uid})
 //   - optIn: bool (required)
+//   - allowFriendRequests: bool (optional, nullable)
 //   - updatedAt: timestamp (optional, nullable)
 //
 // Collection: chats/{chatId} (Direct 1-on-1 friend chat)
@@ -251,7 +253,9 @@ rules_version = '2';
 // Fields:
 //   - name: string (required, 1..24)
 //   - creatorUid: string (required, 1..128, == auth.uid on create, immutable)
-//   - memberUids: list<string> (required, size 1..5, each string 1..128)
+//   - hostFriendCode: string (optional, nullable, 0..12)
+//   - maxMembers: int (optional, nullable, 2..5)
+//   - memberUids: list<string> (required, size 1..5 && <= maxMembers, each string 1..128)
 //   - memberNames: map (required, size <= 5)
 //   - memberAvatars: map (required, size <= 5)
 //   - tournamentStatus: string (required, 'active' | 'final_ready' | 'completed')
@@ -603,7 +607,7 @@ service cloud.firestore {
           'nickname', 'avatarId', 'photoBase64', 'preferredEmoji', 'friendCode',
           'publicProfileEnabled', 'leaderboardOptIn',
           'profileVisibility', 'hidePhotoGlobally', 'hideNameGlobally',
-          'registeredUsername', 'createdAt', 'updatedAt'
+          'allowGlobalFriendRequests', 'registeredUsername', 'createdAt', 'updatedAt'
         ]) &&
         d.keys().hasAll([
           'nickname', 'avatarId', 'preferredEmoji',
@@ -619,6 +623,7 @@ service cloud.firestore {
         (!('profileVisibility' in d) || d.profileVisibility == null || d.profileVisibility in ['public', 'friends', 'private']) &&
         isOptionalNullableBool(d, 'hidePhotoGlobally') &&
         isOptionalNullableBool(d, 'hideNameGlobally') &&
+        isOptionalNullableBool(d, 'allowGlobalFriendRequests') &&
         isOptionalNullableString(d, 'registeredUsername', 0, 20) &&
         isOptionalNullableTimestamp(d, 'createdAt') &&
         isOptionalNullableTimestamp(d, 'updatedAt');
@@ -853,7 +858,7 @@ service cloud.firestore {
       return d.keys().hasOnly([
           'publicNickname', 'avatarId', 'photoBase64',
           'wins', 'tournamentsWon', 'bestStreak', 'blitzWins',
-          'optIn', 'updatedAt'
+          'optIn', 'allowFriendRequests', 'updatedAt'
         ]) &&
         d.keys().hasAll(['publicNickname', 'avatarId', 'optIn']) &&
         isStringLen(d.publicNickname, 1, 20) &&
@@ -864,6 +869,7 @@ service cloud.firestore {
         isOptionalNonNegInt(d, 'bestStreak', 1000000) &&
         isOptionalNonNegInt(d, 'blitzWins', 1000000) &&
         d.optIn is bool &&
+        isOptionalNullableBool(d, 'allowFriendRequests') &&
         isOptionalNullableTimestamp(d, 'updatedAt');
     }
 
@@ -949,7 +955,8 @@ service cloud.firestore {
 
     function isValidGroup(d) {
       return d.keys().hasOnly([
-          'name', 'creatorUid', 'memberUids', 'memberNames', 'memberAvatars',
+          'name', 'creatorUid', 'hostFriendCode', 'maxMembers',
+          'memberUids', 'memberNames', 'memberAvatars',
           'tournamentStatus', 'championUid', 'championName', 'cupName',
           'activeMatch', 'winsByUid', 'lossesByUid', 'drawsByUid', 'cupsByUid',
           'lastMessage', 'lastSenderUid', 'lastSenderName', 'lastMessageAt',
@@ -961,7 +968,10 @@ service cloud.firestore {
         ]) &&
         isStringLen(d.name, 1, 24) &&
         isStringLen(d.creatorUid, 1, 128) &&
+        isOptionalNullableString(d, 'hostFriendCode', 0, 12) &&
+        (!('maxMembers' in d) || d.maxMembers == null || (d.maxMembers is int && d.maxMembers >= 2 && d.maxMembers <= 5)) &&
         isValidGroupMemberUids(d.memberUids) &&
+        d.memberUids.size() <= d.get('maxMembers', 5) &&
         d.memberNames is map && d.memberNames.size() <= 5 &&
         d.memberAvatars is map && d.memberAvatars.size() <= 5 &&
         d.tournamentStatus in ['active', 'final_ready', 'completed'] &&
@@ -1536,7 +1546,8 @@ service cloud.firestore {
     // ===============================================================
 
     match /groups/{groupId} {
-      allow read: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow get: if signedIn();
+      allow list: if signedIn() && request.auth.uid in resource.data.memberUids;
 
       allow create: if signedIn() &&
         isValidGroup(request.resource.data) &&
@@ -1544,9 +1555,14 @@ service cloud.firestore {
         request.auth.uid in request.resource.data.memberUids;
 
       allow update: if signedIn() &&
-        request.auth.uid in resource.data.memberUids &&
         isValidGroup(request.resource.data) &&
-        request.resource.data.creatorUid == resource.data.creatorUid;
+        request.resource.data.creatorUid == resource.data.creatorUid && (
+          request.auth.uid in resource.data.memberUids ||
+          (
+            request.auth.uid in request.resource.data.memberUids &&
+            resource.data.memberUids.size() < resource.data.get('maxMembers', 5)
+          )
+        );
 
       allow delete: if signedIn() && request.auth.uid in resource.data.memberUids;
 

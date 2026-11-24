@@ -149,6 +149,31 @@ class FriendsRepository {
     });
   }
 
+  Future<void> sendFriendRequestToLeaderboardEntry({
+    required UserProfile me,
+    required LeaderboardEntry entry,
+  }) async {
+    if (!entry.allowFriendRequests) {
+      throw Exception(
+        '${entry.publicNickname} has disabled friend requests from the global list.',
+      );
+    }
+    await sendFriendRequest(
+      me: me,
+      target: UserProfile(
+        uid: entry.uid,
+        nickname: entry.publicNickname,
+        avatarId: entry.avatarId,
+        photoBase64: entry.photoBase64,
+        preferredEmoji: '❌',
+        friendCode: '',
+        publicProfileEnabled: true,
+        leaderboardOptIn: true,
+        allowGlobalFriendRequests: entry.allowFriendRequests,
+      ),
+    );
+  }
+
   Future<void> respondFriendRequest({
     required FriendRequest request,
     required bool accept,

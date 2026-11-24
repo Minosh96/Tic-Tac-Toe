@@ -15,6 +15,7 @@ import '../../core/widgets/emoji_picker_grid.dart';
 import '../../core/widgets/footer.dart';
 import '../../core/widgets/live_user_avatar.dart';
 import '../../core/widgets/melow_avatar.dart';
+import '../../core/widgets/notification_bell_button.dart';
 import '../about/about_screen.dart';
 import '../settings/settings_screen.dart';
 import '../splash/splash_screen.dart';
@@ -468,6 +469,10 @@ class _ProfilePageState extends State<ProfilePage> {
               appBar: AppBar(
                 title: const Text('Player Profile'),
                 actions: [
+                  NotificationBellIconButton(
+                    services: widget.services,
+                    me: profile,
+                  ),
                   if (profile != null)
                     IconButton(
                       tooltip: 'Edit profile',
@@ -978,7 +983,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         Card(
                           child: ListTile(
                             leading: const Icon(Icons.info_outline_rounded),
-                            title: const Text('About Melow Tic Tac Toe v3.7'),
+                            title: const Text('About Melow Tic Tac Toe v3.8'),
                             trailing: const Icon(Icons.chevron_right_rounded),
                             onTap: () => Navigator.push(
                               context,

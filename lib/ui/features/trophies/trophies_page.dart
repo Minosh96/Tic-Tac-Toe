@@ -6,6 +6,7 @@ import '../../../domain/models/single_player_models.dart';
 import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
+import '../../core/widgets/notification_bell_button.dart';
 
 /// Melow v3.7 Trophies & Achievements Cabinet clearly separating
 /// Single Player Achievements and Multiplayer Achievements, and awarding
@@ -40,7 +41,12 @@ class _TrophiesPageState extends State<TrophiesPage> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Trophies & Cups')),
+      appBar: AppBar(
+        title: const Text('Trophies & Cups'),
+        actions: [
+          NotificationBellIconButton(services: widget.services),
+        ],
+      ),
       body: SafeArea(
         child: StreamBuilder<PlayerStats>(
           stream: widget.services.profile.watchStats(uid),

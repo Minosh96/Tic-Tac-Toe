@@ -96,6 +96,8 @@ class FriendGroup {
     required this.id,
     required this.name,
     required this.creatorUid,
+    this.hostFriendCode = '',
+    this.maxMembers = 5,
     required this.memberUids,
     required this.memberNames,
     required this.memberAvatars,
@@ -116,11 +118,13 @@ class FriendGroup {
     this.createdAt,
   });
 
-  static const int maxMembers = 5;
+  static const int maxAllowedMembers = 5;
 
   final String id;
   final String name;
   final String creatorUid;
+  final String hostFriendCode;
+  final int maxMembers;
   final List<String> memberUids;
   final Map<String, String> memberNames;
   final Map<String, String> memberAvatars;
@@ -217,6 +221,8 @@ class FriendGroup {
       id: doc.id,
       name: d['name'] as String? ?? 'Melow Squad',
       creatorUid: d['creatorUid'] as String? ?? '',
+      hostFriendCode: d['hostFriendCode'] as String? ?? doc.id,
+      maxMembers: ((d['maxMembers'] as num?)?.toInt() ?? 5).clamp(2, 5),
       memberUids: members,
       memberNames: parseStringMap(d['memberNames']),
       memberAvatars: parseStringMap(d['memberAvatars']),

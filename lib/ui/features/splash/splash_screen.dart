@@ -9,10 +9,11 @@ import '../../core/widgets/melow_logo.dart';
 import '../shell/main_shell.dart';
 import '../single_player/single_player_setup_sheet.dart';
 
-/// Branded animated splash & startup authentication gate offering:
+/// Branded animated splash & startup authentication gate with an attractive
+/// neon arcade login background, offering:
 /// 1. Login as Anonymous (Quick Play)
 /// 2. Login with Existing User (Username & Password)
-/// 3. Register New Account (Username & Password with minimum character requirements)
+/// 3. Create Username & Password (with minimum character requirements)
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key, required this.services});
 
@@ -38,9 +39,9 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 850),
+      duration: const Duration(milliseconds: 900),
     );
-    _scale = Tween<double>(begin: 0.82, end: 1.0).animate(
+    _scale = Tween<double>(begin: 0.84, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
@@ -62,8 +63,6 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       await widget.services.preferences.loadLocal();
       await widget.services.singlePlayer.loadLocalAndSync();
-      // If a user is already signed in from a previous run, restore their profile.
-      // Still show the startup login options if no active user exists yet.
       final existingUser = FirebaseAuth.instance.currentUser;
       if (existingUser != null) {
         await widget.services.profile.ensureProfile();
@@ -242,9 +241,7 @@ class _SplashScreenState extends State<SplashScreen>
                         }
                       },
                 icon: Icon(
-                  isRegister
-                      ? Icons.how_to_reg_rounded
-                      : Icons.login_rounded,
+                  isRegister ? Icons.how_to_reg_rounded : Icons.login_rounded,
                   size: 18,
                 ),
                 label: Text(
@@ -273,163 +270,340 @@ class _SplashScreenState extends State<SplashScreen>
     }
 
     final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final reducedMotion = widget.services.preferences.reducedMotion ||
         MediaQuery.of(context).disableAnimations;
     final currentUser = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: Theme.of(context).brightness == Brightness.dark
-                ? const [AppTheme.darkBackground, Color(0xFF1D1742)]
-                : const [AppTheme.lightBackground, Color(0xFFEDE9FE)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 1. Rich Multi-Stop Arcade Gradient Backdrop
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? const [
+                        Color(0xFF0A0B1E),
+                        Color(0xFF1F144C),
+                        Color(0xFF0F264A),
+                      ]
+                    : const [
+                        Color(0xFFEEF2FF),
+                        Color(0xFFE0E7FF),
+                        Color(0xFFCCFBF1),
+                      ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    FadeTransition(
-                      opacity: reducedMotion ? kAlwaysCompleteAnimation : _fade,
-                      child: ScaleTransition(
-                        scale:
-                            reducedMotion ? kAlwaysCompleteAnimation : _scale,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const MelowLogo(size: 108, borderRadius: 28),
-                            const SizedBox(height: 20),
-                            Text(
-                              'Melow Tic Tac Toe',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .headlineMedium
-                                  ?.copyWith(fontWeight: FontWeight.w900),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Single Player • Multiplayer • Groups • Chat • Call',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: scheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
+          // 2. Decorative Glowing Orbs & Tic-Tac-Toe Grid Watermark
+          Positioned(
+            top: -70,
+            left: -60,
+            child: _GlowOrb(
+              size: 240,
+              color: AppTheme.purpleAccent.withValues(alpha: isDark ? 0.32 : 0.2),
+            ),
+          ),
+          Positioned(
+            bottom: -80,
+            right: -50,
+            child: _GlowOrb(
+              size: 260,
+              color: AppTheme.cyanAccent.withValues(alpha: isDark ? 0.28 : 0.22),
+            ),
+          ),
+          Positioned(
+            top: 110,
+            right: -30,
+            child: _GlowOrb(
+              size: 160,
+              color: AppTheme.goldAccent.withValues(alpha: isDark ? 0.2 : 0.16),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _ArcadeGridBackdropPainter(isDark: isDark),
+              ),
+            ),
+          ),
+          // 3. Floating Game Symbols Backdrop Accents
+          const Positioned(
+            top: 56,
+            left: 28,
+            child: Opacity(
+              opacity: 0.18,
+              child: Text('❌', style: TextStyle(fontSize: 38)),
+            ),
+          ),
+          const Positioned(
+            top: 84,
+            right: 34,
+            child: Opacity(
+              opacity: 0.18,
+              child: Text('⭕', style: TextStyle(fontSize: 36)),
+            ),
+          ),
+          const Positioned(
+            bottom: 92,
+            left: 36,
+            child: Opacity(
+              opacity: 0.18,
+              child: Text('🏆', style: TextStyle(fontSize: 36)),
+            ),
+          ),
+          const Positioned(
+            bottom: 120,
+            right: 32,
+            child: Opacity(
+              opacity: 0.18,
+              child: Text('⚡', style: TextStyle(fontSize: 36)),
+            ),
+          ),
+          // 4. Foreground Login Card & Branding
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      FadeTransition(
+                        opacity:
+                            reducedMotion ? kAlwaysCompleteAnimation : _fade,
+                        child: ScaleTransition(
+                          scale:
+                              reducedMotion ? kAlwaysCompleteAnimation : _scale,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const MelowLogo(size: 110, borderRadius: 28),
+                              const SizedBox(height: 18),
+                              Text(
+                                'Welcome to Melow',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineMedium
+                                    ?.copyWith(fontWeight: FontWeight.w900),
                               ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Single Player • Multiplayer • Friend Groups • Chat & Voice Call',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Glassmorphic Login Panel
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: (isDark
+                                  ? const Color(0xFF1A1B36)
+                                  : Colors.white)
+                              .withValues(alpha: isDark ? 0.86 : 0.92),
+                          borderRadius: BorderRadius.circular(26),
+                          border: Border.all(
+                            color: AppTheme.purpleAccent
+                                .withValues(alpha: isDark ? 0.45 : 0.25),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black
+                                  .withValues(alpha: isDark ? 0.4 : 0.1),
+                              blurRadius: 24,
+                              offset: const Offset(0, 10),
                             ),
                           ],
                         ),
+                        child: _checkingSession || _busy
+                            ? const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Center(
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 3),
+                                ),
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Option 1: Login as Anonymous / Continue
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: AppTheme.goldAccent,
+                                      foregroundColor: AppTheme.darkBackground,
+                                      minimumSize: const Size.fromHeight(50),
+                                    ),
+                                    onPressed: _loginAsAnonymous,
+                                    icon: const Icon(
+                                      Icons.play_arrow_rounded,
+                                      size: 24,
+                                    ),
+                                    label: Text(
+                                      currentUser != null &&
+                                              !currentUser.isAnonymous
+                                          ? 'Continue as Registered Player'
+                                          : 'Login as Anonymous',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  // Option 2: Login with Existing User
+                                  FilledButton.tonalIcon(
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size.fromHeight(48),
+                                    ),
+                                    onPressed: () =>
+                                        _openUsernamePasswordDialog(
+                                      isRegister: false,
+                                    ),
+                                    icon: const Icon(Icons.login_rounded),
+                                    label: const Text(
+                                      'Login with Existing User',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  // Option 3: Create Username & Password
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size.fromHeight(48),
+                                    ),
+                                    onPressed: () =>
+                                        _openUsernamePasswordDialog(
+                                      isRegister: true,
+                                    ),
+                                    icon: const Icon(Icons.how_to_reg_rounded),
+                                    label: const Text(
+                                      'Add Username & Password',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Username: min 4 characters • Password: min 6 characters',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  if (_error != null) ...[
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      _error!,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: scheme.error,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                  const Divider(height: 22),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      showModalBottomSheet<void>(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        builder: (_) => SinglePlayerSetupSheet(
+                                          services: widget.services,
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.smart_toy_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const Text(
+                                      'Play Single Player Offline',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                       ),
-                    ),
-                    const SizedBox(height: 28),
-                    if (_checkingSession || _busy)
-                      const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: CircularProgressIndicator(strokeWidth: 3),
-                      )
-                    else ...[
-                      // Option 1: Login as Anonymous / Continue Session
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(50),
-                          ),
-                          onPressed: _loginAsAnonymous,
-                          icon: const Icon(Icons.play_arrow_rounded, size: 24),
-                          label: Text(
-                            currentUser != null && !currentUser.isAnonymous
-                                ? 'Continue as Registered Player'
-                                : 'Login as Anonymous (Quick Play)',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      // Option 2: Login with Existing User
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.tonalIcon(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                          ),
-                          onPressed: () =>
-                              _openUsernamePasswordDialog(isRegister: false),
-                          icon: const Icon(Icons.login_rounded),
-                          label: const Text(
-                            'Login with Existing User',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      // Option 3: Register Username & Password
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                          ),
-                          onPressed: () =>
-                              _openUsernamePasswordDialog(isRegister: true),
-                          icon: const Icon(Icons.how_to_reg_rounded),
-                          label: const Text(
-                            'Create Username & Password',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Username: min 4 chars • Password: min 6 chars',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 14),
-                        Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: scheme.error,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      TextButton.icon(
-                        onPressed: () {
-                          showModalBottomSheet<void>(
-                            context: context,
-                            isScrollControlled: true,
-                            builder: (_) => SinglePlayerSetupSheet(
-                              services: widget.services,
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.smart_toy_rounded, size: 18),
-                        label: const Text('Play Single Player Offline'),
-                      ),
+                      const SizedBox(height: 18),
+                      const MelowFooter(),
                     ],
-                    const SizedBox(height: 20),
-                    const MelowFooter(),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GlowOrb extends StatelessWidget {
+  const _GlowOrb({required this.size, required this.color});
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [color, color.withValues(alpha: 0.0)],
         ),
       ),
     );
   }
+}
+
+class _ArcadeGridBackdropPainter extends CustomPainter {
+  const _ArcadeGridBackdropPainter({required this.isDark});
+  final bool isDark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = (isDark ? Colors.white : AppTheme.purpleAccent)
+          .withValues(alpha: isDark ? 0.04 : 0.05)
+      ..strokeWidth = 1.0;
+
+    const spacing = 48.0;
+    for (double x = 0; x < size.width; x += spacing) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += spacing) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ArcadeGridBackdropPainter oldDelegate) =>
+      oldDelegate.isDark != isDark;
 }
