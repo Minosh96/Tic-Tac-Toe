@@ -146,7 +146,7 @@ class _LeaderboardPageState extends State<LeaderboardPage> {
                           icon: Icon(Icons.public_rounded, size: 18),
                           label: FittedBox(
                             fit: BoxFit.scaleDown,
-                            child: Text('Global'),
+                            child: Text('Global Top 100'),
                           ),
                         ),
                         ButtonSegment(

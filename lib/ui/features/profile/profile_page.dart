@@ -10,6 +10,7 @@ import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/emoji_picker_grid.dart';
 import '../../core/widgets/footer.dart';
+import '../../core/widgets/live_user_avatar.dart';
 import '../../core/widgets/melow_avatar.dart';
 import '../about/about_screen.dart';
 import '../settings/settings_screen.dart';
@@ -43,13 +44,121 @@ class _ProfilePageState extends State<ProfilePage> {
         photoBase64: base64Img,
         updatePhoto: true,
         preferredEmoji: profile.preferredEmoji,
-        publicProfileEnabled: profile.publicProfileEnabled,
+        publicProfileEnabled: profile.isPublic,
         leaderboardOptIn: profile.leaderboardOptIn,
+        profileVisibility: profile.profileVisibility,
+        hidePhotoGlobally: profile.hidePhotoGlobally,
+        hideNameGlobally: profile.hideNameGlobally,
       );
+      LiveUserProfileBuilder.cache.remove(profile.uid);
       _snack('Profile photo updated!');
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
     }
+  }
+
+  Future<void> _openDeleteOrResetProfileDialog(UserProfile profile) async {
+    bool deletePhoto = true;
+    bool deleteName = true;
+    bool busy = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return AlertDialog(
+            title: const Text('Delete / Reset Profile'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Select which profile items to delete and reset back to the default system profile (${profile.defaultSystemNickname}). Deleted items will immediately stop showing globally and to other players.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: deleteName,
+                    onChanged: busy
+                        ? null
+                        : (v) => setDialogState(() => deleteName = v ?? true),
+                    title: const Text(
+                      'Delete Custom Name',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      'Revert to default system name (${profile.defaultSystemNickname})',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: deletePhoto,
+                    onChanged: busy
+                        ? null
+                        : (v) => setDialogState(() => deletePhoto = v ?? true),
+                    title: const Text(
+                      'Delete Profile Picture',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: const Text(
+                      'Remove gallery photo & revert to default avatar',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: busy ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: scheme.error,
+                  foregroundColor: scheme.onError,
+                ),
+                onPressed: (busy || (!deleteName && !deletePhoto))
+                    ? null
+                    : () async {
+                        setDialogState(() => busy = true);
+                        try {
+                          await widget.services.profile.deleteOrResetProfile(
+                            deleteName: deleteName,
+                            deletePhoto: deletePhoto,
+                          );
+                          LiveUserProfileBuilder.cache.remove(profile.uid);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          _snack(
+                            deleteName && deletePhoto
+                                ? 'Profile reset to default system profile (${profile.defaultSystemNickname}).'
+                                : deleteName
+                                    ? 'Name reset to ${profile.defaultSystemNickname}.'
+                                    : 'Profile picture deleted.',
+                          );
+                        } catch (e) {
+                          _snack(
+                            e.toString().replaceFirst('Exception: ', ''),
+                          );
+                        } finally {
+                          if (ctx.mounted) setDialogState(() => busy = false);
+                        }
+                      },
+                icon: const Icon(Icons.delete_forever_rounded, size: 18),
+                label: Text(busy ? 'Resetting…' : 'Delete Selected'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _openEditProfileSheet(UserProfile profile) async {
@@ -229,10 +338,13 @@ class _ProfilePageState extends State<ProfilePage> {
                                 photoBase64: photoBase64,
                                 updatePhoto: photoChanged,
                                 preferredEmoji: emoji,
-                                publicProfileEnabled:
-                                    profile.publicProfileEnabled,
+                                publicProfileEnabled: profile.isPublic,
                                 leaderboardOptIn: profile.leaderboardOptIn,
+                                profileVisibility: profile.profileVisibility,
+                                hidePhotoGlobally: profile.hidePhotoGlobally,
+                                hideNameGlobally: profile.hideNameGlobally,
                               );
+                              LiveUserProfileBuilder.cache.remove(profile.uid);
                               if (ctx.mounted) Navigator.pop(ctx);
                               _snack('Profile updated!');
                             } catch (e) {
@@ -398,6 +510,231 @@ class _ProfilePageState extends State<ProfilePage> {
                             ),
                           ),
                         ),
+                        if (profile != null) ...[
+                          const SizedBox(height: 14),
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.shield_outlined,
+                                        size: 20,
+                                        color: scheme.primary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Expanded(
+                                        child: Text(
+                                          'Profile Privacy & Visibility',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Control who can see your whole profile (including your profile picture & name):',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: SegmentedButton<ProfileVisibility>(
+                                      showSelectedIcon: false,
+                                      segments: const [
+                                        ButtonSegment(
+                                          value: ProfileVisibility.public,
+                                          icon: Icon(
+                                            Icons.public_rounded,
+                                            size: 16,
+                                          ),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text('Public'),
+                                          ),
+                                        ),
+                                        ButtonSegment(
+                                          value: ProfileVisibility.friends,
+                                          icon: Icon(
+                                            Icons.group_rounded,
+                                            size: 16,
+                                          ),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text('Friends Only'),
+                                          ),
+                                        ),
+                                        ButtonSegment(
+                                          value: ProfileVisibility.private,
+                                          icon: Icon(
+                                            Icons.lock_outline_rounded,
+                                            size: 16,
+                                          ),
+                                          label: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text('Private'),
+                                          ),
+                                        ),
+                                      ],
+                                      selected: {profile.profileVisibility},
+                                      onSelectionChanged: (values) async {
+                                        final chosen = values.first;
+                                        try {
+                                          await widget.services.profile
+                                              .updateProfile(
+                                            nickname: profile.nickname,
+                                            avatarId: profile.avatarId,
+                                            preferredEmoji:
+                                                profile.preferredEmoji,
+                                            publicProfileEnabled: chosen ==
+                                                ProfileVisibility.public,
+                                            leaderboardOptIn:
+                                                profile.leaderboardOptIn,
+                                            profileVisibility: chosen,
+                                            hidePhotoGlobally:
+                                                profile.hidePhotoGlobally,
+                                            hideNameGlobally:
+                                                profile.hideNameGlobally,
+                                          );
+                                          LiveUserProfileBuilder.cache
+                                              .remove(profile.uid);
+                                          _snack(
+                                            'Profile visibility set to ${chosen.label}.',
+                                          );
+                                        } catch (e) {
+                                          _snack(
+                                            e.toString().replaceFirst(
+                                                  'Exception: ',
+                                                  '',
+                                                ),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    profile.profileVisibility.description,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: scheme.primary,
+                                    ),
+                                  ),
+                                  const Divider(height: 20),
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    title: const Text(
+                                      'Hide Profile Picture Globally',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    subtitle: const Text(
+                                      'Never show your custom gallery photo in global rankings',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                                    value: !profile.isPublic ||
+                                        profile.hidePhotoGlobally,
+                                    onChanged: !profile.isPublic
+                                        ? null
+                                        : (v) async {
+                                            await widget.services.profile
+                                                .updateProfile(
+                                              nickname: profile.nickname,
+                                              avatarId: profile.avatarId,
+                                              preferredEmoji:
+                                                  profile.preferredEmoji,
+                                              publicProfileEnabled:
+                                                  profile.isPublic,
+                                              leaderboardOptIn:
+                                                  profile.leaderboardOptIn,
+                                              profileVisibility:
+                                                  profile.profileVisibility,
+                                              hidePhotoGlobally: v,
+                                              hideNameGlobally:
+                                                  profile.hideNameGlobally,
+                                            );
+                                            LiveUserProfileBuilder.cache
+                                                .remove(profile.uid);
+                                          },
+                                  ),
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    title: const Text(
+                                      'Hide Custom Name Globally',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      'Show default system name (${profile.defaultSystemNickname}) in global rankings',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    value: !profile.isPublic ||
+                                        profile.hideNameGlobally,
+                                    onChanged: !profile.isPublic
+                                        ? null
+                                        : (v) async {
+                                            await widget.services.profile
+                                                .updateProfile(
+                                              nickname: profile.nickname,
+                                              avatarId: profile.avatarId,
+                                              preferredEmoji:
+                                                  profile.preferredEmoji,
+                                              publicProfileEnabled:
+                                                  profile.isPublic,
+                                              leaderboardOptIn:
+                                                  profile.leaderboardOptIn,
+                                              profileVisibility:
+                                                  profile.profileVisibility,
+                                              hidePhotoGlobally:
+                                                  profile.hidePhotoGlobally,
+                                              hideNameGlobally: v,
+                                            );
+                                            LiveUserProfileBuilder.cache
+                                                .remove(profile.uid);
+                                          },
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: scheme.error,
+                                        side: BorderSide(
+                                          color: scheme.error
+                                              .withValues(alpha: 0.6),
+                                        ),
+                                      ),
+                                      onPressed: () =>
+                                          _openDeleteOrResetProfileDialog(
+                                              profile),
+                                      icon: const Icon(
+                                        Icons.person_off_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text(
+                                        'Delete / Reset Profile to System Default',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         // Responsive Stat Grid (no text clipping!)
                         GridView.count(

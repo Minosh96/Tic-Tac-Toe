@@ -134,43 +134,189 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   if (profile != null) ...[
                     const SizedBox(height: 16),
-                    const _SectionHeader(title: 'Privacy & Leaderboards'),
+                    const _SectionHeader(title: 'Privacy & Profile Management'),
                     Card(
-                      child: Column(
-                        children: [
-                          SwitchListTile(
-                            secondary: const Icon(Icons.visibility_rounded),
-                            title: const Text('Public Player Profile'),
-                            subtitle: const Text(
-                              'Allow friends & players with your friend code to view stats',
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Whole Profile Visibility (Picture & Name)',
+                              style: TextStyle(fontWeight: FontWeight.w700),
                             ),
-                            value: profile.publicProfileEnabled,
-                            onChanged: (v) => services.profile.updateProfile(
-                              nickname: profile.nickname,
-                              avatarId: profile.avatarId,
-                              preferredEmoji: profile.preferredEmoji,
-                              publicProfileEnabled: v,
-                              leaderboardOptIn: profile.leaderboardOptIn,
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: SegmentedButton<ProfileVisibility>(
+                                showSelectedIcon: false,
+                                segments: const [
+                                  ButtonSegment(
+                                    value: ProfileVisibility.public,
+                                    icon: Icon(Icons.public_rounded, size: 16),
+                                    label: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text('Public'),
+                                    ),
+                                  ),
+                                  ButtonSegment(
+                                    value: ProfileVisibility.friends,
+                                    icon: Icon(Icons.group_rounded, size: 16),
+                                    label: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text('Friends Only'),
+                                    ),
+                                  ),
+                                  ButtonSegment(
+                                    value: ProfileVisibility.private,
+                                    icon: Icon(
+                                      Icons.lock_outline_rounded,
+                                      size: 16,
+                                    ),
+                                    label: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text('Private'),
+                                    ),
+                                  ),
+                                ],
+                                selected: {profile.profileVisibility},
+                                onSelectionChanged: (v) {
+                                  final chosen = v.first;
+                                  services.profile.updateProfile(
+                                    nickname: profile.nickname,
+                                    avatarId: profile.avatarId,
+                                    preferredEmoji: profile.preferredEmoji,
+                                    publicProfileEnabled:
+                                        chosen == ProfileVisibility.public,
+                                    leaderboardOptIn: profile.leaderboardOptIn,
+                                    profileVisibility: chosen,
+                                    hidePhotoGlobally:
+                                        profile.hidePhotoGlobally,
+                                    hideNameGlobally: profile.hideNameGlobally,
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                          const Divider(height: 1),
-                          SwitchListTile(
-                            secondary: const Icon(Icons.leaderboard_rounded),
-                            title: const Text('Show on Global Leaderboard'),
-                            subtitle: const Text(
-                              'Opt in or out of public global rankings anytime',
+                            const SizedBox(height: 6),
+                            Text(
+                              profile.profileVisibility.description,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                            value: profile.leaderboardOptIn,
-                            onChanged: (v) => services.profile.updateProfile(
-                              nickname: profile.nickname,
-                              avatarId: profile.avatarId,
-                              preferredEmoji: profile.preferredEmoji,
-                              publicProfileEnabled:
-                                  profile.publicProfileEnabled,
-                              leaderboardOptIn: v,
+                            const Divider(height: 18),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              secondary: const Icon(Icons.hide_image_outlined),
+                              title: const Text('Hide Profile Picture Globally'),
+                              subtitle: const Text(
+                                'Hide your gallery photo from global rankings',
+                              ),
+                              value: !profile.isPublic ||
+                                  profile.hidePhotoGlobally,
+                              onChanged: !profile.isPublic
+                                  ? null
+                                  : (v) => services.profile.updateProfile(
+                                        nickname: profile.nickname,
+                                        avatarId: profile.avatarId,
+                                        preferredEmoji: profile.preferredEmoji,
+                                        publicProfileEnabled: profile.isPublic,
+                                        leaderboardOptIn:
+                                            profile.leaderboardOptIn,
+                                        profileVisibility:
+                                            profile.profileVisibility,
+                                        hidePhotoGlobally: v,
+                                        hideNameGlobally:
+                                            profile.hideNameGlobally,
+                                      ),
                             ),
-                          ),
-                        ],
+                            const Divider(height: 1),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              secondary: const Icon(Icons.person_off_outlined),
+                              title: const Text('Hide Name Globally'),
+                              subtitle: Text(
+                                'Show default system name (${profile.defaultSystemNickname}) globally',
+                              ),
+                              value:
+                                  !profile.isPublic || profile.hideNameGlobally,
+                              onChanged: !profile.isPublic
+                                  ? null
+                                  : (v) => services.profile.updateProfile(
+                                        nickname: profile.nickname,
+                                        avatarId: profile.avatarId,
+                                        preferredEmoji: profile.preferredEmoji,
+                                        publicProfileEnabled: profile.isPublic,
+                                        leaderboardOptIn:
+                                            profile.leaderboardOptIn,
+                                        profileVisibility:
+                                            profile.profileVisibility,
+                                        hidePhotoGlobally:
+                                            profile.hidePhotoGlobally,
+                                        hideNameGlobally: v,
+                                      ),
+                            ),
+                            const Divider(height: 1),
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              secondary: const Icon(Icons.leaderboard_rounded),
+                              title: const Text('Show on Global Top 100'),
+                              subtitle: const Text(
+                                'Opt in or out of public global rankings anytime',
+                              ),
+                              value: profile.isPublic &&
+                                  profile.leaderboardOptIn,
+                              onChanged: !profile.isPublic
+                                  ? null
+                                  : (v) => services.profile.updateProfile(
+                                        nickname: profile.nickname,
+                                        avatarId: profile.avatarId,
+                                        preferredEmoji: profile.preferredEmoji,
+                                        publicProfileEnabled: profile.isPublic,
+                                        leaderboardOptIn: v,
+                                        profileVisibility:
+                                            profile.profileVisibility,
+                                        hidePhotoGlobally:
+                                            profile.hidePhotoGlobally,
+                                        hideNameGlobally:
+                                            profile.hideNameGlobally,
+                                      ),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor:
+                                      Theme.of(context).colorScheme.error,
+                                ),
+                                onPressed: () async {
+                                  await services.profile.deleteOrResetProfile(
+                                    deleteName: true,
+                                    deletePhoto: true,
+                                  );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Profile reset to default system name (${profile.defaultSystemNickname}).',
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.delete_forever_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text(
+                                  'Delete Profile (Reset to Default System Name)',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -180,7 +326,7 @@ class SettingsScreen extends StatelessWidget {
                     child: ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('About Melow Tic Tac Toe'),
-                      subtitle: const Text('Version 3.4.1 • Melow Labs'),
+                      subtitle: const Text('Version 3.4.2 • Melow Labs'),
                       trailing: const Icon(Icons.chevron_right_rounded),
                       onTap: () => Navigator.push(
                         context,

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:melow_tic_tac_toe/domain/game_engine.dart';
 import 'package:melow_tic_tac_toe/domain/models/game_room.dart';
 import 'package:melow_tic_tac_toe/domain/models/social_models.dart';
+import 'package:melow_tic_tac_toe/domain/models/user_profile.dart';
 import 'package:melow_tic_tac_toe/ui/core/app_theme.dart';
 import 'package:melow_tic_tac_toe/ui/core/widgets/emoji_picker_grid.dart';
 import 'package:melow_tic_tac_toe/ui/features/about/about_screen.dart';
@@ -275,14 +276,63 @@ void main() {
     expect(entry.avatarId, 'panda');
   });
 
-  testWidgets('AboutScreen shows v3.4.1 branding and Melow Labs credit', (
+  test('UserProfile enforces Public, Friends Only, Private and global hide flags', () {
+    const publicProfile = UserProfile(
+      uid: 'abcd1234',
+      nickname: 'Minosh',
+      avatarId: 'fox',
+      photoBase64: 'base64photo',
+      preferredEmoji: '🔥',
+      friendCode: 'MELOW123',
+      publicProfileEnabled: true,
+      leaderboardOptIn: true,
+      profileVisibility: ProfileVisibility.public,
+    );
+    expect(publicProfile.defaultSystemNickname, 'Player_ABCD');
+    expect(publicProfile.globalDisplayNickname, 'Minosh');
+    expect(publicProfile.globalDisplayPhotoBase64, 'base64photo');
+
+    const friendsOnlyProfile = UserProfile(
+      uid: 'abcd1234',
+      nickname: 'Minosh',
+      avatarId: 'fox',
+      photoBase64: 'base64photo',
+      preferredEmoji: '🔥',
+      friendCode: 'MELOW123',
+      publicProfileEnabled: false,
+      leaderboardOptIn: true,
+      profileVisibility: ProfileVisibility.friends,
+    );
+    expect(friendsOnlyProfile.globalDisplayNickname, 'Player_ABCD');
+    expect(friendsOnlyProfile.globalDisplayPhotoBase64, isNull);
+    expect(friendsOnlyProfile.friendsDisplayNickname, 'Minosh');
+    expect(friendsOnlyProfile.friendsDisplayPhotoBase64, 'base64photo');
+
+    const privateProfile = UserProfile(
+      uid: 'abcd1234',
+      nickname: 'Minosh',
+      avatarId: 'fox',
+      photoBase64: 'base64photo',
+      preferredEmoji: '🔥',
+      friendCode: 'MELOW123',
+      publicProfileEnabled: false,
+      leaderboardOptIn: false,
+      profileVisibility: ProfileVisibility.private,
+    );
+    expect(privateProfile.globalDisplayNickname, 'Player_ABCD');
+    expect(privateProfile.globalDisplayPhotoBase64, isNull);
+    expect(privateProfile.friendsDisplayNickname, 'Player_ABCD');
+    expect(privateProfile.friendsDisplayPhotoBase64, isNull);
+  });
+
+  testWidgets('AboutScreen shows v3.4.2 branding and Melow Labs credit', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       MaterialApp(theme: AppTheme.dark(), home: const AboutScreen()),
     );
     expect(find.text('Melow Tic Tac Toe'), findsOneWidget);
-    expect(find.text('Version 3.4.1 (Build 11)'), findsOneWidget);
+    expect(find.text('Version 3.4.2 (Build 12)'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Developed at Melow Labs'),
       200,

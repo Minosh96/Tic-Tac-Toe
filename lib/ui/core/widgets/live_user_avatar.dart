@@ -50,15 +50,36 @@ class _LiveUserProfileBuilderState extends State<LiveUserProfileBuilder> {
       _stream = null;
       return;
     }
-    _stream = widget.services.profile.watchProfile(widget.uid).map((profile) {
-      if (profile != null) {
-        if (LiveUserProfileBuilder.cache.length > 100) {
-          LiveUserProfileBuilder.cache.clear();
-        }
-        LiveUserProfileBuilder.cache[widget.uid] = profile;
-      }
-      return profile;
-    });
+    final myUid = widget.services.game.maybeCurrentUid;
+    _stream = widget.services.profile
+        .watchProfile(widget.uid)
+        .map((profile) {
+          if (profile == null) return null;
+          // Enforce Private visibility masking when viewed by other users.
+          final effective = (profile.isPrivate && widget.uid != myUid)
+              ? UserProfile(
+                  uid: profile.uid,
+                  nickname: profile.defaultSystemNickname,
+                  avatarId: 'astro',
+                  photoBase64: null,
+                  preferredEmoji: profile.preferredEmoji,
+                  friendCode: profile.friendCode,
+                  publicProfileEnabled: false,
+                  leaderboardOptIn: false,
+                  profileVisibility: ProfileVisibility.private,
+                )
+              : profile;
+          if (LiveUserProfileBuilder.cache.length > 100) {
+            LiveUserProfileBuilder.cache.clear();
+          }
+          LiveUserProfileBuilder.cache[widget.uid] = effective;
+          return effective;
+        })
+        .handleError((_) {
+          // When target profile is Private or Friends-Only for a non-friend,
+          // Firestore security rules block read access; remove any stale cache.
+          LiveUserProfileBuilder.cache.remove(widget.uid);
+        });
   }
 
   @override

@@ -174,4 +174,103 @@ test('Firestore Security Rules — Melow v2.0 invariants', async (t) => {
     await assertFails(deleteDoc(doc(strangerDb, 'chats', chatId, 'messages', 'dm_clear')));
     await assertSucceeds(deleteDoc(doc(guestDb, 'chats', chatId, 'messages', 'dm_clear')));
   });
+
+  await t.test('enforces profileVisibility, hidePhotoGlobally, hideNameGlobally, +0..5 stats deltas, and stats-bounded leaderboard updates', async () => {
+    const hostUserRef = doc(hostDb, 'users', 'host_uid');
+    await assertSucceeds(
+      setDoc(hostUserRef, {
+        nickname: 'HostPlayer',
+        avatarId: 'cat',
+        preferredEmoji: '❌',
+        publicProfileEnabled: true,
+        leaderboardOptIn: true,
+        profileVisibility: 'private',
+        hidePhotoGlobally: true,
+        hideNameGlobally: false,
+        createdAt: serverTimestamp(),
+      })
+    );
+    // Owner can read private profile, non-owners cannot
+    await assertSucceeds(getDoc(hostUserRef));
+    await assertFails(getDoc(doc(guestDb, 'users', 'host_uid')));
+
+    // Switch to 'friends' visibility: guest can read only if in host's friends subcollection
+    await assertSucceeds(updateDoc(hostUserRef, { profileVisibility: 'friends' }));
+    await assertFails(getDoc(doc(guestDb, 'users', 'host_uid')));
+    await assertSucceeds(
+      setDoc(doc(hostDb, 'users', 'host_uid', 'friends', 'guest_uid'), {
+        friendUid: 'guest_uid',
+        nickname: 'Guest',
+        avatarId: 'dog',
+        since: serverTimestamp(),
+        status: 'accepted',
+      })
+    );
+    await assertSucceeds(getDoc(doc(guestDb, 'users', 'host_uid')));
+    await assertFails(getDoc(doc(strangerDb, 'users', 'host_uid')));
+
+    // Stats create (<=1) and update (+0..5 per match, tournamentsWon/trophyCount <= +1)
+    const hostStatsRef = doc(hostDb, 'stats', 'host_uid');
+    await assertSucceeds(
+      setDoc(hostStatsRef, {
+        gamesPlayed: 1,
+        wins: 1,
+        losses: 0,
+        draws: 0,
+        tournamentsWon: 0,
+        currentStreak: 1,
+        bestStreak: 1,
+        blitzWins: 1,
+        megaWins: 0,
+        trophyCount: 0,
+        updatedAt: serverTimestamp(),
+      })
+    );
+    await assertSucceeds(
+      updateDoc(hostStatsRef, {
+        gamesPlayed: 6,
+        wins: 4,
+        losses: 1,
+        draws: 1,
+        tournamentsWon: 1,
+        currentStreak: 4,
+        bestStreak: 4,
+        blitzWins: 4,
+        megaWins: 3,
+        trophyCount: 1,
+        updatedAt: serverTimestamp(),
+      })
+    );
+    // Reject > +5 jump on wins or > +1 jump on tournamentsWon
+    await assertFails(updateDoc(hostStatsRef, { wins: 15 }));
+    await assertFails(updateDoc(hostStatsRef, { tournamentsWon: 3 }));
+
+    // Leaderboard create & update bounded by stats/{uid}
+    const lbRef = doc(hostDb, 'leaderboardEntries', 'host_uid');
+    await assertSucceeds(
+      setDoc(lbRef, {
+        publicNickname: 'HostPlayer',
+        avatarId: 'cat',
+        wins: 1,
+        tournamentsWon: 0,
+        bestStreak: 1,
+        blitzWins: 1,
+        optIn: true,
+        updatedAt: serverTimestamp(),
+      })
+    );
+    // Resync with stats (wins: 4 -> 5, bounded by stats.wins + 1)
+    await assertSucceeds(
+      updateDoc(lbRef, {
+        publicNickname: 'Player #HOST',
+        wins: 4,
+        tournamentsWon: 1,
+        bestStreak: 4,
+        blitzWins: 4,
+        updatedAt: serverTimestamp(),
+      })
+    );
+    // Reject jump exceeding stats + 1
+    await assertFails(updateDoc(lbRef, { wins: 99 }));
+  });
 });

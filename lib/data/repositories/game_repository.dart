@@ -185,10 +185,10 @@ class GameRepository {
         'guestEmoji': emoji,
         'guestAvatar': guestAvatar,
         'status': 'playing',
+        'turnStartedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (isBlitz) {
-        patch['turnStartedAt'] = FieldValue.serverTimestamp();
         patch['turnDeadlineAt'] = Timestamp.fromDate(
           DateTime.now().add(const Duration(seconds: kBlitzTurnSeconds)),
         );
@@ -254,7 +254,7 @@ class GameRepository {
           guestWins: guestWins,
           bestOf: bestOf,
         );
-        matchFinished = champion.isNotEmpty;
+        matchFinished = true;
         patch.addAll({
           'roundDone': true,
           'lastResult': isDraw ? 'draw' : win!.winner,
@@ -262,7 +262,7 @@ class GameRepository {
           'guestWins': guestWins,
           'draws': draws,
           'champion': champion,
-          'status': matchFinished ? 'finished' : 'playing',
+          'status': champion.isNotEmpty ? 'finished' : 'playing',
           'turnDeadlineAt': null,
         });
       } else if (isBlitz) {
@@ -316,7 +316,7 @@ class GameRepository {
         guestWins: guestWins,
         bestOf: bestOf,
       );
-      matchFinished = champion.isNotEmpty;
+      matchFinished = true;
 
       tx.update(ref, {
         'roundDone': true,
@@ -325,7 +325,7 @@ class GameRepository {
         'hostWins': hostWins,
         'guestWins': guestWins,
         'champion': champion,
-        'status': matchFinished ? 'finished' : 'playing',
+        'status': champion.isNotEmpty ? 'finished' : 'playing',
         'turnDeadlineAt': null,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -336,13 +336,12 @@ class GameRepository {
     }
   }
 
-  /// Idempotently records completed tournament results (cups, trophies,
-  /// achievements, stats, rivalries, match history, and leaderboard) for the
-  /// signed-in player with in-memory deduplication so winning a cup NEVER
-  /// triggers concurrent-transaction Firebase errors.
+  /// Idempotently records completed round & tournament results (wins, losses,
+  /// draws, cups, trophies, achievements, rivalries, match history, and
+  /// leaderboard) for the signed-in player with isolated transactions so stats
+  /// always update accurately on the dashboard.
   Future<void> recordFinishedMatchForCurrentUser(GameRoom room) {
-    if (!room.isFinished ||
-        room.champion.isEmpty ||
+    if ((!room.roundDone && !room.isFinished) ||
         room.hostId.isEmpty ||
         room.guestId.isEmpty) {
       return Future<void>.value();
@@ -352,8 +351,13 @@ class GameRepository {
     final mySide = room.sideForUid(myUid);
     if (mySide == null) return Future<void>.value();
 
+    final resultSide =
+        room.lastResult.isNotEmpty ? room.lastResult : room.champion;
+    if (resultSide.isEmpty) return Future<void>.value();
+
+    final tsTag = room.turnStartedAt?.millisecondsSinceEpoch ?? 0;
     final matchId =
-        '${room.code}__${room.hostWins}_${room.guestWins}_${room.draws}_${room.round}';
+        '${room.code}__${tsTag}_r${room.round}_${room.hostWins}_${room.guestWins}_${room.draws}';
     final existing = _inFlightMatchRecordings[matchId];
     if (existing != null) return existing;
 
@@ -361,6 +365,7 @@ class GameRepository {
       room: room,
       myUid: myUid,
       mySide: mySide,
+      resultSide: resultSide,
       matchId: matchId,
     ).whenComplete(() => _inFlightMatchRecordings.remove(matchId));
     _inFlightMatchRecordings[matchId] = future;
@@ -371,6 +376,7 @@ class GameRepository {
     required GameRoom room,
     required String myUid,
     required String mySide,
+    required String resultSide,
     required String matchId,
   }) async {
     final processedRef = _db
@@ -384,10 +390,18 @@ class GameRepository {
       if (already.exists) return;
     } catch (_) {}
 
-    final iWon = room.champion == mySide;
-    final winnerUid = room.champion == 'h' ? room.hostId : room.guestId;
+    final opponentSide = mySide == 'h' ? 'g' : 'h';
+    final iWonRound = resultSide == mySide;
+    final isDrawRound = resultSide == 'draw';
+    final iLostRound = resultSide == opponentSide;
+
+    final isTournamentFinished = room.isFinished && room.champion.isNotEmpty;
+    final iWonTournament = isTournamentFinished && room.champion == mySide;
+    final winnerUid = room.champion == 'h'
+        ? room.hostId
+        : (room.champion == 'g' ? room.guestId : '');
     final opponentUid = mySide == 'h' ? room.guestId : room.hostId;
-    final wonCleanSweep = iWon &&
+    final wonCleanSweep = iWonTournament &&
         ((mySide == 'h' && room.guestWins == 0) ||
             (mySide == 'g' && room.hostWins == 0));
 
@@ -402,43 +416,45 @@ class GameRepository {
     int nextTournaments = 0;
     int nextBlitzWins = 0;
     int nextMegaWins = 0;
+    int nextBestStreak = 0;
     int nextRivalryTotal = 1;
     bool recordedOwnerStats = false;
 
-    // Step 1: Owner-only atomic transaction (processedMatches + stats + Melow Cup trophy + leaderboard).
-    // Kept separate from shared rivalry/match docs so opponent contention can never abort your cup!
+    // Step 1A: Isolated Owner Stats + Processed Ledger Transaction.
+    // Kept completely separate from trophies, leaderboard, rivalries, and matches
+    // so nothing can ever roll back your dashboard Wins, Losses, Draws, or Cups!
     try {
       await _db.runTransaction((tx) async {
         final procSnap = await tx.get(processedRef);
         if (procSnap.exists) return;
 
         final statsSnap = await tx.get(statsRef);
-        final userSnap = await tx.get(userRef);
-
         final prevStats = statsSnap.data() ?? const <String, dynamic>{};
-        final userData = userSnap.data() ?? const <String, dynamic>{};
 
         final gamesPlayed =
             ((prevStats['gamesPlayed'] as num?)?.toInt() ?? 0) + 1;
         nextWins =
-            ((prevStats['wins'] as num?)?.toInt() ?? 0) + (iWon ? 1 : 0);
+            ((prevStats['wins'] as num?)?.toInt() ?? 0) + (iWonRound ? 1 : 0);
         final losses =
-            ((prevStats['losses'] as num?)?.toInt() ?? 0) + (iWon ? 0 : 1);
-        final draws = (prevStats['draws'] as num?)?.toInt() ?? 0;
+            ((prevStats['losses'] as num?)?.toInt() ?? 0) + (iLostRound ? 1 : 0);
+        final draws =
+            ((prevStats['draws'] as num?)?.toInt() ?? 0) + (isDrawRound ? 1 : 0);
         nextTournaments =
             ((prevStats['tournamentsWon'] as num?)?.toInt() ?? 0) +
-                (iWon ? 1 : 0);
-        final currentStreak = iWon
-            ? ((prevStats['currentStreak'] as num?)?.toInt() ?? 0) + 1
-            : 0;
+                (iWonTournament ? 1 : 0);
+        final prevStreak = (prevStats['currentStreak'] as num?)?.toInt() ?? 0;
+        final currentStreak = iWonRound
+            ? prevStreak + 1
+            : (isDrawRound ? prevStreak : 0);
         final prevBest = (prevStats['bestStreak'] as num?)?.toInt() ?? 0;
-        final bestStreak = currentStreak > prevBest ? currentStreak : prevBest;
+        nextBestStreak = currentStreak > prevBest ? currentStreak : prevBest;
         nextBlitzWins = ((prevStats['blitzWins'] as num?)?.toInt() ?? 0) +
-            (iWon && room.isBlitz ? 1 : 0);
+            (iWonRound && room.isBlitz ? 1 : 0);
         nextMegaWins = ((prevStats['megaWins'] as num?)?.toInt() ?? 0) +
-            (iWon && room.size >= 5 ? 1 : 0);
+            (iWonRound && room.size >= 5 ? 1 : 0);
         final trophyCount =
-            ((prevStats['trophyCount'] as num?)?.toInt() ?? 0) + (iWon ? 1 : 0);
+            ((prevStats['trophyCount'] as num?)?.toInt() ?? 0) +
+                (iWonTournament ? 1 : 0);
 
         tx.set(processedRef, {
           'roomId': room.code,
@@ -452,54 +468,10 @@ class GameRepository {
           'draws': draws,
           'tournamentsWon': nextTournaments,
           'currentStreak': currentStreak,
-          'bestStreak': bestStreak,
+          'bestStreak': nextBestStreak,
           'blitzWins': nextBlitzWins,
           'megaWins': nextMegaWins,
           'trophyCount': trophyCount,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        if (iWon) {
-          final trophyId = 'cup_$matchId';
-          tx.set(
-            _db
-                .collection('users')
-                .doc(myUid)
-                .collection('trophies')
-                .doc(trophyId),
-            {
-              'trophyId': trophyId,
-              'matchId': matchId,
-              'roomId': room.code,
-              'title':
-                  'Melow Cup (${room.size}×${room.size} ${room.isBlitz ? 'Blitz' : 'Classic'})',
-              'awardedAt': FieldValue.serverTimestamp(),
-            },
-          );
-        }
-
-        final rawNick =
-            ((userData['nickname'] as String?) ?? room.playerName(mySide))
-                .trim();
-        final safeNick = rawNick.isEmpty
-            ? 'Player'
-            : (rawNick.length > 20 ? rawNick.substring(0, 20) : rawNick);
-        final rawAvatar =
-            ((userData['avatarId'] as String?) ?? room.playerAvatar(mySide))
-                .trim();
-        final safeAvatar = rawAvatar.isEmpty ? 'astro' : rawAvatar;
-
-        tx.set(leaderboardRef, {
-          'publicNickname': safeNick,
-          'avatarId': safeAvatar,
-          if (userData['photoBase64'] is String &&
-              (userData['photoBase64'] as String).length <= 140000)
-            'photoBase64': userData['photoBase64'],
-          'wins': nextWins,
-          'tournamentsWon': nextTournaments,
-          'bestStreak': bestStreak,
-          'blitzWins': nextBlitzWins,
-          'optIn': userData['leaderboardOptIn'] != false,
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
@@ -511,70 +483,168 @@ class GameRepository {
 
     if (!recordedOwnerStats) return;
 
-    // Step 2: Shared match summary & rivalry stats (isolated so contention never affects cups/stats).
+    // Step 1B: Award Melow Cup Trophy when tournament is won.
+    if (iWonTournament) {
+      try {
+        final trophyId = 'cup_$matchId';
+        await _db
+            .collection('users')
+            .doc(myUid)
+            .collection('trophies')
+            .doc(trophyId)
+            .set({
+          'trophyId': trophyId,
+          'matchId': matchId,
+          'roomId': room.code,
+          'title':
+              'Melow Cup (${room.size}×${room.size} ${room.isBlitz ? 'Blitz' : 'Classic'})',
+          'awardedAt': FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+
+    // Step 1C: Sync Leaderboard Entry while strictly enforcing profile privacy & global hide flags.
+    try {
+      final userSnap = await userRef.get();
+      final userData = userSnap.data() ?? const <String, dynamic>{};
+      final pubEnabled = userData['publicProfileEnabled'] != false;
+      final visRaw = userData['profileVisibility'] as String?;
+      final isPublicVis = visRaw == null ? pubEnabled : (visRaw == 'public');
+      final hideName = userData['hideNameGlobally'] == true;
+      final hidePhoto = userData['hidePhotoGlobally'] == true;
+      final defaultSysName =
+          'Player_${myUid.length >= 4 ? myUid.substring(0, 4).toUpperCase() : myUid.toUpperCase()}';
+
+      final rawNick =
+          ((userData['nickname'] as String?) ?? room.playerName(mySide)).trim();
+      final customNick = rawNick.isEmpty
+          ? defaultSysName
+          : (rawNick.length > 20 ? rawNick.substring(0, 20) : rawNick);
+      final globalNick =
+          (!isPublicVis || hideName) ? defaultSysName : customNick;
+
+      final rawAvatar =
+          ((userData['avatarId'] as String?) ?? room.playerAvatar(mySide))
+              .trim();
+      final customAvatar = rawAvatar.isEmpty ? 'astro' : rawAvatar;
+      final globalAvatar = (!isPublicVis || hidePhoto) ? 'astro' : customAvatar;
+
+      final String? globalPhoto = (!isPublicVis || hidePhoto)
+          ? null
+          : (userData['photoBase64'] is String &&
+                  (userData['photoBase64'] as String).isNotEmpty &&
+                  (userData['photoBase64'] as String).length <= 140000
+              ? userData['photoBase64'] as String
+              : null);
+
+      final globalOptIn =
+          isPublicVis && (userData['leaderboardOptIn'] != false);
+
+      await leaderboardRef.set({
+        'publicNickname': globalNick,
+        'avatarId': globalAvatar,
+        'photoBase64': globalPhoto,
+        'wins': nextWins,
+        'tournamentsWon': nextTournaments,
+        'bestStreak': nextBestStreak,
+        'blitzWins': nextBlitzWins,
+        'optIn': globalOptIn,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+
+    // Step 2: Shared match summary & rivalry stats (both winner and loser can write idempotently).
     try {
       await _db.runTransaction((tx) async {
         final rivalSnap = await tx.get(rivalryRef);
-        final matchSnap = await tx.get(matchRef);
         final prevRival = rivalSnap.data() ?? const <String, dynamic>{};
 
-        if (iWon && !matchSnap.exists) {
-          tx.set(matchRef, {
-            'roomId': room.code,
-            'players': [room.hostId, room.guestId],
-            'playerNames': {
-              room.hostId: room.hostName,
-              room.guestId: room.guestName,
-            },
-            'gameMode': room.gameMode.id,
-            'boardSize': room.size,
-            'hostWins': room.hostWins,
-            'guestWins': room.guestWins,
-            'draws': room.draws,
-            'finalWinnerUid': winnerUid,
-            'finalStatus': 'won',
-            'completedAt': FieldValue.serverTimestamp(),
-            'processedAt': FieldValue.serverTimestamp(),
-          });
+        if (isTournamentFinished) {
+          final matchSnap = await tx.get(matchRef);
+          if (!matchSnap.exists && winnerUid.isNotEmpty) {
+            tx.set(matchRef, {
+              'roomId': room.code,
+              'players': [room.hostId, room.guestId],
+              'playerNames': {
+                room.hostId: room.hostName,
+                room.guestId: room.guestName,
+              },
+              'gameMode': room.gameMode.id,
+              'boardSize': room.size,
+              'hostWins': room.hostWins,
+              'guestWins': room.guestWins,
+              'draws': room.draws,
+              'finalWinnerUid': winnerUid,
+              'finalStatus': 'won',
+              'completedAt': FieldValue.serverTimestamp(),
+              'processedAt': FieldValue.serverTimestamp(),
+            });
 
+            final prevWinsMap = Map<String, dynamic>.from(
+              prevRival['winsByPlayer'] as Map? ?? const {},
+            );
+            final hostRivalWins =
+                ((prevWinsMap[room.hostId] as num?)?.toInt() ?? 0) +
+                    (winnerUid == room.hostId ? 1 : 0);
+            final guestRivalWins =
+                ((prevWinsMap[room.guestId] as num?)?.toInt() ?? 0) +
+                    (winnerUid == room.guestId ? 1 : 0);
+            nextRivalryTotal =
+                ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) + 1;
+            final prevStreakOwner =
+                prevRival['currentStreakOwner'] as String? ?? '';
+            final nextRivalStreak = prevStreakOwner == winnerUid
+                ? ((prevRival['currentStreak'] as num?)?.toInt() ?? 0) + 1
+                : 1;
+            final prevRivalBest =
+                (prevRival['bestStreak'] as num?)?.toInt() ?? 0;
+
+            tx.set(rivalryRef, {
+              'playerUids': [room.hostId, room.guestId]..sort(),
+              'winsByPlayer': {
+                room.hostId: hostRivalWins,
+                room.guestId: guestRivalWins,
+              },
+              'draws': (prevRival['draws'] as num?)?.toInt() ?? 0,
+              'totalMatches': nextRivalryTotal,
+              'currentStreakOwner': winnerUid,
+              'currentStreak': nextRivalStreak,
+              'bestStreak': nextRivalStreak > prevRivalBest
+                  ? nextRivalStreak
+                  : prevRivalBest,
+              'lastMatchAt': FieldValue.serverTimestamp(),
+            });
+          } else {
+            nextRivalryTotal =
+                ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) +
+                    (opponentUid.isNotEmpty ? 1 : 0);
+          }
+        } else if (isDrawRound && mySide == 'h') {
           final prevWinsMap = Map<String, dynamic>.from(
             prevRival['winsByPlayer'] as Map? ?? const {},
           );
           final hostRivalWins =
-              ((prevWinsMap[room.hostId] as num?)?.toInt() ?? 0) +
-                  (winnerUid == room.hostId ? 1 : 0);
+              (prevWinsMap[room.hostId] as num?)?.toInt() ?? 0;
           final guestRivalWins =
-              ((prevWinsMap[room.guestId] as num?)?.toInt() ?? 0) +
-                  (winnerUid == room.guestId ? 1 : 0);
+              (prevWinsMap[room.guestId] as num?)?.toInt() ?? 0;
+          final prevDraws = (prevRival['draws'] as num?)?.toInt() ?? 0;
           nextRivalryTotal =
               ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) + 1;
-          final prevStreakOwner =
-              prevRival['currentStreakOwner'] as String? ?? '';
-          final nextRivalStreak = prevStreakOwner == winnerUid
-              ? ((prevRival['currentStreak'] as num?)?.toInt() ?? 0) + 1
-              : 1;
-          final prevRivalBest =
-              (prevRival['bestStreak'] as num?)?.toInt() ?? 0;
-
           tx.set(rivalryRef, {
             'playerUids': [room.hostId, room.guestId]..sort(),
             'winsByPlayer': {
               room.hostId: hostRivalWins,
               room.guestId: guestRivalWins,
             },
-            'draws': (prevRival['draws'] as num?)?.toInt() ?? 0,
+            'draws': prevDraws + 1,
             'totalMatches': nextRivalryTotal,
-            'currentStreakOwner': winnerUid,
-            'currentStreak': nextRivalStreak,
-            'bestStreak': nextRivalStreak > prevRivalBest
-                ? nextRivalStreak
-                : prevRivalBest,
+            'currentStreakOwner':
+                prevRival['currentStreakOwner'] as String? ?? '',
+            'currentStreak':
+                (prevRival['currentStreak'] as num?)?.toInt() ?? 0,
+            'bestStreak': (prevRival['bestStreak'] as num?)?.toInt() ?? 0,
             'lastMatchAt': FieldValue.serverTimestamp(),
           });
-        } else {
-          nextRivalryTotal =
-              ((prevRival['totalMatches'] as num?)?.toInt() ?? 0) +
-                  (opponentUid.isNotEmpty ? 1 : 0);
         }
       });
     } catch (_) {}
@@ -651,10 +721,10 @@ class GameRepository {
         'lastResult': '',
         'timeoutWinner': '',
         'turn': GameEngine.startingTurnForRound(nextRound),
+        'turnStartedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (isBlitz) {
-        patch['turnStartedAt'] = FieldValue.serverTimestamp();
         patch['turnDeadlineAt'] = Timestamp.fromDate(
           DateTime.now().add(const Duration(seconds: kBlitzTurnSeconds)),
         );
@@ -688,10 +758,10 @@ class GameRepository {
         'status': 'playing',
         'wheelProposal': null,
         'wheelResult': null,
+        'turnStartedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
       if (isBlitz) {
-        patch['turnStartedAt'] = FieldValue.serverTimestamp();
         patch['turnDeadlineAt'] = Timestamp.fromDate(
           DateTime.now().add(const Duration(seconds: kBlitzTurnSeconds)),
         );

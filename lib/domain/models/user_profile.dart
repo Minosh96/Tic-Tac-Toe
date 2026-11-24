@@ -1,6 +1,33 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Player public profile stored at `users/{uid}`.
+/// Visibility scope for the player's profile (including profile picture & name).
+enum ProfileVisibility {
+  public('public', 'Public', 'Visible to everyone & global rankings'),
+  friends('friends', 'Friends Only', 'Visible only to your friends; hidden globally'),
+  private('private', 'Private', 'Hidden from everyone; shows default system name');
+
+  const ProfileVisibility(this.id, this.label, this.description);
+  final String id;
+  final String label;
+  final String description;
+
+  static ProfileVisibility fromId(String? raw, {bool fallbackPublic = true}) {
+    switch (raw) {
+      case 'public':
+        return ProfileVisibility.public;
+      case 'friends':
+        return ProfileVisibility.friends;
+      case 'private':
+        return ProfileVisibility.private;
+      default:
+        return fallbackPublic
+            ? ProfileVisibility.public
+            : ProfileVisibility.friends;
+    }
+  }
+}
+
+/// Player profile stored at `users/{uid}`.
 class UserProfile {
   const UserProfile({
     required this.uid,
@@ -11,6 +38,9 @@ class UserProfile {
     required this.friendCode,
     required this.publicProfileEnabled,
     required this.leaderboardOptIn,
+    this.profileVisibility = ProfileVisibility.public,
+    this.hidePhotoGlobally = false,
+    this.hideNameGlobally = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -23,24 +53,71 @@ class UserProfile {
   final String friendCode;
   final bool publicProfileEnabled;
   final bool leaderboardOptIn;
+  final ProfileVisibility profileVisibility;
+  final bool hidePhotoGlobally;
+  final bool hideNameGlobally;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
   bool get hasCustomPhoto => photoBase64 != null && photoBase64!.isNotEmpty;
 
+  static String defaultSystemNicknameFor(String uid) {
+    final clean = uid.trim();
+    final suffix = clean.length >= 4
+        ? clean.substring(0, 4).toUpperCase()
+        : clean.toUpperCase().padRight(4, '0');
+    return 'Player_$suffix';
+  }
+
+  String get defaultSystemNickname => defaultSystemNicknameFor(uid);
+
+  bool get isPublic => profileVisibility == ProfileVisibility.public;
+  bool get isFriendsOnly => profileVisibility == ProfileVisibility.friends;
+  bool get isPrivate => profileVisibility == ProfileVisibility.private;
+
+  /// Effective nickname allowed to be shown globally (Leaderboards / non-friends).
+  String get globalDisplayNickname =>
+      (!isPublic || hideNameGlobally) ? defaultSystemNickname : nickname;
+
+  /// Effective avatar ID allowed to be shown globally.
+  String get globalDisplayAvatarId =>
+      (!isPublic || hidePhotoGlobally) ? 'astro' : avatarId;
+
+  /// Effective gallery photo allowed to be shown globally.
+  String? get globalDisplayPhotoBase64 =>
+      (!isPublic || hidePhotoGlobally) ? null : photoBase64;
+
+  /// Effective nickname allowed to be shown to accepted friends.
+  String get friendsDisplayNickname =>
+      isPrivate ? defaultSystemNickname : nickname;
+
+  /// Effective avatar ID allowed to be shown to accepted friends.
+  String get friendsDisplayAvatarId => isPrivate ? 'astro' : avatarId;
+
+  /// Effective gallery photo allowed to be shown to accepted friends.
+  String? get friendsDisplayPhotoBase64 => isPrivate ? null : photoBase64;
+
   factory UserProfile.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data() ?? const <String, dynamic>{};
+    final pubEnabled = data['publicProfileEnabled'] != false;
+    final vis = ProfileVisibility.fromId(
+      data['profileVisibility'] as String?,
+      fallbackPublic: pubEnabled,
+    );
     return UserProfile(
       uid: doc.id,
-      nickname: data['nickname'] as String? ?? 'Player',
+      nickname: data['nickname'] as String? ?? defaultSystemNicknameFor(doc.id),
       avatarId: data['avatarId'] as String? ?? 'astro',
       photoBase64: data['photoBase64'] as String?,
       preferredEmoji: data['preferredEmoji'] as String? ?? '❌',
       friendCode: data['friendCode'] as String? ?? '',
-      publicProfileEnabled: data['publicProfileEnabled'] != false,
+      publicProfileEnabled: vis == ProfileVisibility.public && pubEnabled,
       leaderboardOptIn: data['leaderboardOptIn'] != false,
+      profileVisibility: vis,
+      hidePhotoGlobally: data['hidePhotoGlobally'] == true,
+      hideNameGlobally: data['hideNameGlobally'] == true,
       createdAt: data['createdAt'] is Timestamp
           ? (data['createdAt'] as Timestamp).toDate()
           : null,

@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 3.4.1 (Build 11)',
+            'Version 3.4.2 (Build 12)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),

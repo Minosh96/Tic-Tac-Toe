@@ -64,6 +64,9 @@ rules_version = '2';
 //   - friendCode: string (optional, 6..12, immutable once set)
 //   - publicProfileEnabled: bool (required)
 //   - leaderboardOptIn: bool (required)
+//   - profileVisibility: string (optional, nullable, 'public' | 'friends' | 'private')
+//   - hidePhotoGlobally: bool (optional, nullable)
+//   - hideNameGlobally: bool (optional, nullable)
 //   - createdAt: timestamp (optional, == request.time on create, immutable once set)
 //   - updatedAt: timestamp (optional)
 //
@@ -153,8 +156,8 @@ rules_version = '2';
 //
 // Collection: stats/{uid} (Owner-writable with bounded post-match deltas, Spark-compatible)
 // Fields:
-//   - gamesPlayed, wins, losses, draws, tournamentsWon, currentStreak,
-//     bestStreak, blitzWins, megaWins, trophyCount: int (0..1000000; +0..1 per update)
+//   - gamesPlayed, wins, losses, draws, currentStreak, bestStreak, blitzWins, megaWins: int (0..1000000; +0..5 per update)
+//   - tournamentsWon, trophyCount: int (0..1000000; +0..1 per update)
 //   - updatedAt: timestamp (optional, nullable)
 //
 // Collection: matches/{matchId} (Immutable, verified against finished room membership)
@@ -180,12 +183,12 @@ rules_version = '2';
 //   - currentStreakOwner: string (optional, nullable, 0..128)
 //   - lastMatchAt: timestamp (optional, nullable)
 //
-// Collection: leaderboardEntries/{uid} (Owner-writable with bounded deltas)
+// Collection: leaderboardEntries/{uid} (Owner-writable with bounded deltas or stats-bounded resync)
 // Fields:
 //   - publicNickname: string (required, 1..20)
 //   - avatarId: string (required, 1..32)
 //   - photoBase64: string (optional, nullable, 0..140000)
-//   - wins, tournamentsWon, bestStreak, blitzWins: int (0..1000000; +0..1 on update)
+//   - wins, tournamentsWon, bestStreak, blitzWins: int (0..1000000; +0..1 on update or bounded by stats/{uid})
 //   - optIn: bool (required)
 //   - updatedAt: timestamp (optional, nullable)
 //
@@ -533,7 +536,9 @@ service cloud.firestore {
     function isValidUserProfile(d) {
       return d.keys().hasOnly([
           'nickname', 'avatarId', 'photoBase64', 'preferredEmoji', 'friendCode',
-          'publicProfileEnabled', 'leaderboardOptIn', 'createdAt', 'updatedAt'
+          'publicProfileEnabled', 'leaderboardOptIn',
+          'profileVisibility', 'hidePhotoGlobally', 'hideNameGlobally',
+          'createdAt', 'updatedAt'
         ]) &&
         d.keys().hasAll([
           'nickname', 'avatarId', 'preferredEmoji',
@@ -546,6 +551,9 @@ service cloud.firestore {
         (!('friendCode' in d) || d.friendCode == null || isStringLen(d.friendCode, 6, 12)) &&
         d.publicProfileEnabled is bool &&
         d.leaderboardOptIn is bool &&
+        (!('profileVisibility' in d) || d.profileVisibility == null || d.profileVisibility in ['public', 'friends', 'private']) &&
+        isOptionalNullableBool(d, 'hidePhotoGlobally') &&
+        isOptionalNullableBool(d, 'hideNameGlobally') &&
         isOptionalNullableTimestamp(d, 'createdAt') &&
         isOptionalNullableTimestamp(d, 'updatedAt');
     }
@@ -714,17 +722,17 @@ service cloud.firestore {
     }
 
     function isValidPlayerStatsUpdate(next, prev) {
-      return isBoundedDelta(next.get('gamesPlayed', 0), prev.get('gamesPlayed', 0), 0, 1) &&
-        isBoundedDelta(next.get('wins', 0), prev.get('wins', 0), 0, 1) &&
-        isBoundedDelta(next.get('losses', 0), prev.get('losses', 0), 0, 1) &&
-        isBoundedDelta(next.get('draws', 0), prev.get('draws', 0), 0, 1) &&
+      return isBoundedDelta(next.get('gamesPlayed', 0), prev.get('gamesPlayed', 0), 0, 5) &&
+        isBoundedDelta(next.get('wins', 0), prev.get('wins', 0), 0, 5) &&
+        isBoundedDelta(next.get('losses', 0), prev.get('losses', 0), 0, 5) &&
+        isBoundedDelta(next.get('draws', 0), prev.get('draws', 0), 0, 5) &&
         isBoundedDelta(next.get('tournamentsWon', 0), prev.get('tournamentsWon', 0), 0, 1) &&
-        isBoundedDelta(next.get('blitzWins', 0), prev.get('blitzWins', 0), 0, 1) &&
-        isBoundedDelta(next.get('megaWins', 0), prev.get('megaWins', 0), 0, 1) &&
+        isBoundedDelta(next.get('blitzWins', 0), prev.get('blitzWins', 0), 0, 5) &&
+        isBoundedDelta(next.get('megaWins', 0), prev.get('megaWins', 0), 0, 5) &&
         isBoundedDelta(next.get('trophyCount', 0), prev.get('trophyCount', 0), 0, 1) &&
-        isBoundedDelta(next.get('bestStreak', 0), prev.get('bestStreak', 0), 0, 1) &&
+        isBoundedDelta(next.get('bestStreak', 0), prev.get('bestStreak', 0), 0, 5) &&
         (next.get('currentStreak', 0) == 0 ||
-          isBoundedDelta(next.get('currentStreak', 0), prev.get('currentStreak', 0), 0, 1));
+          isBoundedDelta(next.get('currentStreak', 0), prev.get('currentStreak', 0), 0, 5));
     }
 
     function isValidMatch(d, matchId) {
@@ -980,8 +988,18 @@ service cloud.firestore {
       // Non-PII game profile only; private data lives in users/{uid}/private/{docId}.
       allow get: if signedIn() && (
         request.auth.uid == uid ||
-        (resource != null && resource.data.publicProfileEnabled == true) ||
-        exists(/databases/$(database)/documents/users/$(uid)/friends/$(request.auth.uid))
+        (
+          resource != null && ('profileVisibility' in resource.data) && resource.data.profileVisibility == 'private'
+            ? false
+            : (
+              resource != null && ('profileVisibility' in resource.data) && resource.data.profileVisibility == 'friends'
+                ? exists(/databases/$(database)/documents/users/$(uid)/friends/$(request.auth.uid))
+                : (
+                  (resource != null && resource.data.publicProfileEnabled == true) ||
+                  exists(/databases/$(database)/documents/users/$(uid)/friends/$(request.auth.uid))
+                )
+            )
+        )
       );
       allow list: if false;
 
@@ -1273,11 +1291,17 @@ service cloud.firestore {
         isValidLeaderboardCreateCounts(uid, request.resource.data);
 
       allow update: if isOwner(uid) &&
-        isValidLeaderboardEntry(request.resource.data) &&
-        isBoundedDelta(request.resource.data.get('wins', 0), resource.data.get('wins', 0), 0, 1) &&
-        isBoundedDelta(request.resource.data.get('tournamentsWon', 0), resource.data.get('tournamentsWon', 0), 0, 1) &&
-        isBoundedDelta(request.resource.data.get('blitzWins', 0), resource.data.get('blitzWins', 0), 0, 1) &&
-        isBoundedDelta(request.resource.data.get('bestStreak', 0), resource.data.get('bestStreak', 0), 0, 1);
+        isValidLeaderboardEntry(request.resource.data) && (
+          (
+            isBoundedDelta(request.resource.data.get('wins', 0), resource.data.get('wins', 0), 0, 1) &&
+            isBoundedDelta(request.resource.data.get('tournamentsWon', 0), resource.data.get('tournamentsWon', 0), 0, 1) &&
+            isBoundedDelta(request.resource.data.get('blitzWins', 0), resource.data.get('blitzWins', 0), 0, 1) &&
+            isBoundedDelta(request.resource.data.get('bestStreak', 0), resource.data.get('bestStreak', 0), 0, 1)
+          ) || (
+            exists(/databases/$(database)/documents/stats/$(uid)) &&
+            isLeaderboardBoundedByStats(request.resource.data, get(/databases/$(database)/documents/stats/$(uid)).data)
+          )
+        );
 
       allow delete: if false;
     }

@@ -28,7 +28,8 @@ class LeaderboardRepository {
 
   final FirebaseFirestore _db;
 
-  static const int pageSize = 20;
+  static const int pageSize = 100;
+  static const int maxGlobalRankings = 100;
 
   /// Sorts entries deterministically with tie-breaking (metric -> wins -> tournaments -> nickname).
   static List<LeaderboardEntry> sortDeterministically(
@@ -50,31 +51,27 @@ class LeaderboardRepository {
     return copy;
   }
 
-  /// Fetches a page of opted-in Global Leaderboard entries using indexed query.
+  /// Fetches the Top 100 opted-in Global Leaderboard entries using indexed query.
   Future<LeaderboardPageResult> fetchGlobalPage({
     required LeaderboardMetric metric,
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
   }) async {
-    Query<Map<String, dynamic>> query = _db
+    final Query<Map<String, dynamic>> query = _db
         .collection('leaderboardEntries')
         .where('optIn', isEqualTo: true)
         .orderBy(metric.field, descending: true)
-        .limit(pageSize);
-
-    if (startAfter != null) {
-      query = query.startAfterDocument(startAfter);
-    }
+        .limit(maxGlobalRankings);
 
     final snap = await query.get();
     final entries = sortDeterministically(
       snap.docs.map(LeaderboardEntry.fromFirestore).toList(growable: false),
       metric,
-    );
+    ).take(maxGlobalRankings).toList(growable: false);
 
     return LeaderboardPageResult(
       entries: entries,
       lastDocument: snap.docs.isNotEmpty ? snap.docs.last : null,
-      hasMore: snap.docs.length == pageSize,
+      hasMore: false,
     );
   }
 

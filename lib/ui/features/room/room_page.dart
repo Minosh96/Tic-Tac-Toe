@@ -142,10 +142,11 @@ class _RoomPageState extends State<RoomPage> {
     final reducedMotion = widget.services.preferences.reducedMotion ||
         MediaQuery.of(context).disableAnimations;
 
-    // Immediately record cup/trophy/achievement/stats for BOTH winner & loser once per match!
-    if (room.isFinished && room.champion.isNotEmpty) {
+    // Immediately record round win/loss/draw & tournament cup/trophy/achievement/stats for BOTH players!
+    if (room.roundDone || (room.isFinished && room.champion.isNotEmpty)) {
+      final tsTag = room.turnStartedAt?.millisecondsSinceEpoch ?? 0;
       final matchKey =
-          '${room.code}_${room.hostWins}_${room.guestWins}_${room.draws}_${room.round}';
+          '${room.code}_${tsTag}_${room.hostWins}_${room.guestWins}_${room.draws}_${room.round}';
       if (_lastRecordedMatchKey != matchKey) {
         _lastRecordedMatchKey = matchKey;
         widget.services.game.recordFinishedMatchForCurrentUser(room);
