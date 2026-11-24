@@ -1,6 +1,7 @@
 import '../../data/repositories/chat_repository.dart';
 import '../../data/repositories/friends_repository.dart';
 import '../../data/repositories/game_repository.dart';
+import '../../data/repositories/group_repository.dart';
 import '../../data/repositories/leaderboard_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/rivalry_repository.dart';
@@ -9,7 +10,7 @@ import '../../data/repositories/voice_call_repository.dart';
 import 'preferences_controller.dart';
 import 'sound_service.dart';
 
-/// Single dependency container wiring all Melow v3.6 repositories & services.
+/// Single dependency container wiring all Melow v3.7 repositories & services.
 class AppServices {
   AppServices({
     required this.preferences,
@@ -22,7 +23,13 @@ class AppServices {
     required this.chat,
     required this.voiceCall,
     SinglePlayerRepository? singlePlayer,
-  }) : singlePlayer = singlePlayer ?? SinglePlayerRepository();
+    GroupRepository? groups,
+  })  : singlePlayer = singlePlayer ?? SinglePlayerRepository(),
+        groups = groups ??
+            GroupRepository(
+              gameRepository: game,
+              friendsRepository: friends,
+            );
 
   factory AppServices.production({String databaseId = 'melow-game'}) {
     final preferences = PreferencesController();
@@ -38,6 +45,11 @@ class AppServices {
     final chat = ChatRepository(databaseId: databaseId);
     final voiceCall = VoiceCallRepository(databaseId: databaseId);
     final singlePlayer = SinglePlayerRepository(databaseId: databaseId);
+    final groups = GroupRepository(
+      gameRepository: game,
+      friendsRepository: friends,
+      databaseId: databaseId,
+    );
 
     preferences.onCloudSync = (prefs) => profile.savePrivatePreferences(prefs);
 
@@ -52,6 +64,7 @@ class AppServices {
       chat: chat,
       voiceCall: voiceCall,
       singlePlayer: singlePlayer,
+      groups: groups,
     );
   }
 
@@ -65,6 +78,7 @@ class AppServices {
   final ChatRepository chat;
   final VoiceCallRepository voiceCall;
   final SinglePlayerRepository singlePlayer;
+  final GroupRepository groups;
 
   Future<void> dispose() async {
     await sound.dispose();

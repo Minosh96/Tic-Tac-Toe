@@ -8,7 +8,8 @@ import '../../../domain/models/user_profile.dart';
 import '../../core/widgets/emoji_picker_grid.dart';
 import 'single_player_game_page.dart';
 
-/// Configuration modal bottom sheet for Single Player (Player vs System) mode.
+/// Configuration modal bottom sheet for Single Player mode with separate
+/// My Symbol and Bot Symbol selectors.
 class SinglePlayerSetupSheet extends StatefulWidget {
   const SinglePlayerSetupSheet({
     super.key,
@@ -29,15 +30,44 @@ class _SinglePlayerSetupSheetState extends State<SinglePlayerSetupSheet> {
   int _boardSize = 3;
   int _bestOf = 3;
   FirstPlayerChoice _firstPlayer = FirstPlayerChoice.player;
-  late String _emoji;
+  late String _myEmoji;
+  late String _botEmoji;
   bool _practiceTools = true;
-  bool _showFullEmojiGrid = false;
+  bool _showMyEmojiGrid = false;
+  bool _showBotEmojiGrid = false;
 
   @override
   void initState() {
     super.initState();
     _boardSize = widget.services.preferences.favoriteBoardSize;
-    _emoji = widget.profile?.preferredEmoji ?? '❌';
+    _myEmoji = widget.profile?.preferredEmoji ?? '❌';
+    _botEmoji = _pickDistinctEmoji(_myEmoji, preferred: '⭕');
+  }
+
+  String _pickDistinctEmoji(String avoid, {String preferred = '⭕'}) {
+    if (preferred != avoid) return preferred;
+    for (final candidate in const ['⭕', '❌', '🤖', '⚡', '🔥', '⭐']) {
+      if (candidate != avoid) return candidate;
+    }
+    return '⭕';
+  }
+
+  void _setMyEmoji(String emoji) {
+    setState(() {
+      _myEmoji = emoji;
+      if (_botEmoji == _myEmoji) {
+        _botEmoji = _pickDistinctEmoji(_myEmoji);
+      }
+    });
+  }
+
+  void _setBotEmoji(String emoji) {
+    setState(() {
+      _botEmoji = emoji;
+      if (_myEmoji == _botEmoji) {
+        _myEmoji = _pickDistinctEmoji(_botEmoji, preferred: '❌');
+      }
+    });
   }
 
   void _startSoloMatch() {
@@ -55,7 +85,8 @@ class _SinglePlayerSetupSheetState extends State<SinglePlayerSetupSheet> {
           services: widget.services,
           playerName: playerName,
           playerAvatar: playerAvatar,
-          playerEmoji: _emoji,
+          playerEmoji: _myEmoji,
+          botEmoji: _botEmoji,
           difficulty: _difficulty,
           mode: _mode,
           boardSize: _boardSize,
@@ -102,7 +133,7 @@ class _SinglePlayerSetupSheetState extends State<SinglePlayerSetupSheet> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Single Player vs System',
+                      'Single Player',
                       style: Theme.of(context)
                           .textTheme
                           .titleLarge
@@ -114,7 +145,7 @@ class _SinglePlayerSetupSheetState extends State<SinglePlayerSetupSheet> {
               const SizedBox(height: 14),
               // 1. Difficulty
               const Text(
-                'System Difficulty',
+                'Difficulty',
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
@@ -244,41 +275,85 @@ class _SinglePlayerSetupSheetState extends State<SinglePlayerSetupSheet> {
                 ),
               ),
               const SizedBox(height: 12),
-              // 5. Game Symbol (X, O, or Universal Emojis)
+              // 5A. My Symbol
               Row(
                 children: [
                   const Text(
-                    'Your Symbol',
+                    'My Symbol',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(width: 10),
                   ChoiceChip(
                     label: const Text('❌ X'),
-                    selected: _emoji == '❌',
-                    onSelected: (_) => setState(() => _emoji = '❌'),
+                    selected: _myEmoji == '❌',
+                    onSelected: (_) => _setMyEmoji('❌'),
                   ),
                   const SizedBox(width: 6),
                   ChoiceChip(
                     label: const Text('⭕ O'),
-                    selected: _emoji == '⭕',
-                    onSelected: (_) => setState(() => _emoji = '⭕'),
+                    selected: _myEmoji == '⭕',
+                    onSelected: (_) => _setMyEmoji('⭕'),
                   ),
                   const Spacer(),
                   TextButton.icon(
                     onPressed: () => setState(
-                      () => _showFullEmojiGrid = !_showFullEmojiGrid,
+                      () => _showMyEmojiGrid = !_showMyEmojiGrid,
                     ),
-                    icon: Text(_emoji, style: const TextStyle(fontSize: 20)),
-                    label: Text(_showFullEmojiGrid ? 'Hide' : 'More Emojis'),
+                    icon: Text(_myEmoji, style: const TextStyle(fontSize: 20)),
+                    label: Text(_showMyEmojiGrid ? 'Hide' : 'Choose'),
                   ),
                 ],
               ),
-              if (_showFullEmojiGrid) ...[
+              if (_showMyEmojiGrid) ...[
                 const SizedBox(height: 6),
                 EmojiPickerGrid(
-                  selectedEmoji: _emoji,
-                  maxHeight: 150,
-                  onSelected: (e) => setState(() => _emoji = e),
+                  selectedEmoji: _myEmoji,
+                  maxHeight: 140,
+                  onSelected: _setMyEmoji,
+                ),
+              ],
+              const SizedBox(height: 8),
+              // 5B. Bot Symbol
+              Row(
+                children: [
+                  const Text(
+                    'Bot Symbol',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(width: 10),
+                  ChoiceChip(
+                    label: const Text('⭕ O'),
+                    selected: _botEmoji == '⭕',
+                    onSelected: (_) => _setBotEmoji('⭕'),
+                  ),
+                  const SizedBox(width: 6),
+                  ChoiceChip(
+                    label: const Text('❌ X'),
+                    selected: _botEmoji == '❌',
+                    onSelected: (_) => _setBotEmoji('❌'),
+                  ),
+                  const SizedBox(width: 6),
+                  ChoiceChip(
+                    label: const Text('🤖'),
+                    selected: _botEmoji == '🤖',
+                    onSelected: (_) => _setBotEmoji('🤖'),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () => setState(
+                      () => _showBotEmojiGrid = !_showBotEmojiGrid,
+                    ),
+                    icon: Text(_botEmoji, style: const TextStyle(fontSize: 20)),
+                    label: Text(_showBotEmojiGrid ? 'Hide' : 'Choose'),
+                  ),
+                ],
+              ),
+              if (_showBotEmojiGrid) ...[
+                const SizedBox(height: 6),
+                EmojiPickerGrid(
+                  selectedEmoji: _botEmoji,
+                  maxHeight: 140,
+                  onSelected: _setBotEmoji,
                 ),
               ],
               // 6. Practice Mode & Quick Audio/Haptic/Animation Toggles
@@ -291,7 +366,7 @@ class _SinglePlayerSetupSheetState extends State<SinglePlayerSetupSheet> {
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: const Text(
-                    'Enable AI move hints and undo during solo play',
+                    'Enable move hints and undo during solo play',
                     style: TextStyle(fontSize: 12),
                   ),
                   value: _practiceTools,

@@ -34,6 +34,7 @@ class SinglePlayerGamePage extends StatefulWidget {
     required this.playerName,
     required this.playerAvatar,
     required this.playerEmoji,
+    this.botEmoji,
     required this.difficulty,
     required this.mode,
     required this.boardSize,
@@ -46,6 +47,7 @@ class SinglePlayerGamePage extends StatefulWidget {
   final String playerName;
   final String playerAvatar;
   final String playerEmoji;
+  final String? botEmoji;
   final BotDifficulty difficulty;
   final SinglePlayerMode mode;
   final int boardSize;
@@ -98,7 +100,10 @@ class _SinglePlayerGamePageState extends State<SinglePlayerGamePage> {
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 2),
     );
-    _botEmoji = _pickDistinctBotEmoji(widget.playerEmoji);
+    final chosenBot = widget.botEmoji?.trim() ?? '';
+    _botEmoji = (chosenBot.isNotEmpty && chosenBot != widget.playerEmoji)
+        ? chosenBot
+        : _pickDistinctBotEmoji(widget.playerEmoji);
     _matchSessionId = '${DateTime.now().microsecondsSinceEpoch}';
     _initRound(roundNumber: 1, resetScores: true);
   }

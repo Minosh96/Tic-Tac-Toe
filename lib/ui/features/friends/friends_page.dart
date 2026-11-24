@@ -3,13 +3,16 @@ import 'package:flutter/services.dart';
 
 import '../../../core/services/app_services.dart';
 import '../../../domain/game_engine.dart';
+import '../../../domain/models/group_models.dart';
 import '../../../domain/models/social_models.dart';
 import '../../../domain/models/user_profile.dart';
+import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
 import '../../core/widgets/live_user_avatar.dart';
 import '../../core/widgets/melow_avatar.dart';
 import '../chat/friend_chat_screen.dart';
 import '../chat/voice_call_screen.dart';
+import '../groups/group_detail_screen.dart';
 import '../rivalry/rivalry_screen.dart';
 import '../room/room_page.dart';
 
@@ -39,6 +42,141 @@ class _FriendsPageState extends State<FriendsPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _openCreateGroupDialog(UserProfile me) async {
+    final nameCtrl = TextEditingController();
+    final codeCtrls = List<TextEditingController>.generate(
+      4,
+      (_) => TextEditingController(),
+    );
+    bool creating = false;
+    String? errorMsg;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final scheme = Theme.of(ctx).colorScheme;
+          return AlertDialog(
+            title: const Text('Create Friend Group (Max 5)'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Create a group of up to 5 players (You + up to 4 Friend Codes). Play 2-player matches, compete in the Final Match for the Melow Challenge Champion Cup 🏆, and use Group Chat & Calls!',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameCtrl,
+                    maxLength: 24,
+                    decoration: const InputDecoration(
+                      labelText: 'Group Name',
+                      hintText: 'Melow Champions Squad',
+                      prefixIcon: Icon(Icons.groups_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Add Member Friend Codes (Up to 4 Friends + You = 5 Max)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  for (var i = 0; i < codeCtrls.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: TextField(
+                        controller: codeCtrls[i],
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: InputDecoration(
+                          labelText:
+                              'Member ${i + 2} Friend Code ${i == 0 ? '(Required)' : '(Optional)'}',
+                          prefixIcon: const Icon(Icons.vpn_key_rounded),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                  if (errorMsg != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      errorMsg!,
+                      style: TextStyle(
+                        color: scheme.error,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: creating ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                onPressed: creating
+                    ? null
+                    : () async {
+                        setDialogState(() {
+                          creating = true;
+                          errorMsg = null;
+                        });
+                        try {
+                          final codes = codeCtrls
+                              .map((c) => c.text.trim())
+                              .where((c) => c.isNotEmpty)
+                              .toList(growable: false);
+                          final groupId = await widget.services.groups
+                              .createGroupByFriendCodes(
+                            creator: me,
+                            groupName: nameCtrl.text,
+                            friendCodes: codes,
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (!mounted) return;
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => GroupDetailScreen(
+                                services: widget.services,
+                                groupId: groupId,
+                              ),
+                            ),
+                          );
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            setDialogState(() {
+                              creating = false;
+                              errorMsg = e
+                                  .toString()
+                                  .replaceFirst('Exception: ', '');
+                            });
+                          }
+                        }
+                      },
+                icon: const Icon(Icons.group_add_rounded),
+                label: Text(creating ? 'Creating…' : 'Create Group'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    nameCtrl.dispose();
+    for (final c in codeCtrls) {
+      c.dispose();
+    }
   }
 
   Future<void> _searchByCode() async {
@@ -376,6 +514,98 @@ class _FriendsPageState extends State<FriendsPage> {
                           ],
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 14),
+                    // Friend Groups Section (Max 5 Members, 2-Player Matches, Final Match for Melow Challenge Champion Cup, Group Chat & Calls)
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '🏆 Friend Groups (Max 5)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        if (me != null)
+                          FilledButton.tonalIcon(
+                            onPressed: () => _openCreateGroupDialog(me),
+                            icon: const Icon(Icons.group_add_rounded, size: 18),
+                            label: const Text('Create Group'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    StreamBuilder<List<FriendGroup>>(
+                      stream: widget.services.groups.watchUserGroups(uid),
+                      builder: (context, groupSnap) {
+                        final groups = groupSnap.data ?? const [];
+                        if (groups.isEmpty) {
+                          return Card(
+                            child: ListTile(
+                              leading: const Text(
+                                '🏟️',
+                                style: TextStyle(fontSize: 28),
+                              ),
+                              title: const Text(
+                                'Create a 5-Player Friend Group',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                              subtitle: const Text(
+                                'Add up to 5 members by friend code, play 2-player matches & a Final Match for the Melow Challenge Champion Cup, with Group Chat & Calls!',
+                              ),
+                              trailing: const Icon(Icons.chevron_right_rounded),
+                              onTap: me == null
+                                  ? null
+                                  : () => _openCreateGroupDialog(me),
+                            ),
+                          );
+                        }
+                        return Column(
+                          children: [
+                            for (final g in groups)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Card(
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: AppTheme.purpleAccent
+                                          .withValues(alpha: 0.18),
+                                      child: const Text('🏆'),
+                                    ),
+                                    title: Text(
+                                      g.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      g.tournamentStatus == 'completed' &&
+                                              g.championName.isNotEmpty
+                                          ? 'Champion: ${g.championName} 🏆 • ${g.memberUids.length}/5 Members'
+                                          : '${g.memberUids.length}/5 Members • ${g.lastMessage.isNotEmpty ? g.lastMessage : g.cupName}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    trailing: const Icon(
+                                      Icons.chevron_right_rounded,
+                                    ),
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => GroupDetailScreen(
+                                          services: widget.services,
+                                          groupId: g.id,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 14),
                     // Incoming Match Challenges

@@ -546,27 +546,30 @@ class _HomePageState extends State<HomePage> {
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        const SizedBox(height: 5),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.16),
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                          ),
-                                          child: Text(
-                                            '${stats.rankBadge} • Lvl ${stats.level}',
-                                            style: const TextStyle(
-                                              color: AppTheme.goldAccent,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w800,
+                                        if (profile != null &&
+                                            profile.friendCode.isNotEmpty) ...[
+                                          const SizedBox(height: 5),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.16),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              'Code: ${profile.friendCode}',
+                                              style: const TextStyle(
+                                                color: AppTheme.goldAccent,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w800,
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                        ],
                                       ],
                                     ),
                                   ),
@@ -638,61 +641,6 @@ class _HomePageState extends State<HomePage> {
                                 ],
                               ),
                             ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        // Prominent Single Player vs System Feature Banner
-                        Card(
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(20),
-                            onTap: () => _openSinglePlayerSheet(profile),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.purpleAccent
-                                          .withValues(alpha: 0.16),
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: const Text(
-                                      '🤖',
-                                      style: TextStyle(fontSize: 26),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Play vs System (Single Player)',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 15,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          'Easy • Normal • Hard • Impossible • 3×3–6×6 • Offline Ready',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: scheme.onSurfaceVariant,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const Icon(Icons.play_circle_fill_rounded,
-                                      color: AppTheme.purpleAccent, size: 30),
-                                ],
-                              ),
-                            ),
                           ),
                         ),
                         const SizedBox(height: 14),

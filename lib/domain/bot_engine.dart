@@ -81,7 +81,7 @@ const List<int> supportedSoloBestOf = [3, 5, 7];
 /// Who makes the opening move in Single Player mode.
 enum FirstPlayerChoice {
   player('player', 'Player First'),
-  system('system', 'System First'),
+  system('system', 'Bot First'),
   random('random', 'Random');
 
   const FirstPlayerChoice(this.id, this.label);

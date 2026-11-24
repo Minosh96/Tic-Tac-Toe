@@ -36,6 +36,147 @@ class ProfileRepository {
   DocumentReference<Map<String, dynamic>> _prefsRef(String uid) =>
       _userRef(uid).collection('private').doc('preferences');
 
+  /// Validates a player account username (minimum 4 characters, max 20, letters/numbers/_/.).
+  static String? validateUsername(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.length < 4) {
+      return 'Username must be at least 4 characters (4–20 characters).';
+    }
+    if (trimmed.length > 20) {
+      return 'Username must be 20 characters or fewer.';
+    }
+    if (!RegExp(r'^[A-Za-z0-9_.]+$').hasMatch(trimmed)) {
+      return 'Username can only contain letters, numbers, _ and .';
+    }
+    return null;
+  }
+
+  /// Validates a player account password (minimum 6 characters).
+  static String? validatePassword(String raw) {
+    if (raw.length < 6) {
+      return 'Password must be at least 6 characters.';
+    }
+    if (raw.length > 64) {
+      return 'Password must be 64 characters or fewer.';
+    }
+    return null;
+  }
+
+  static String _syntheticEmailForUsername(String username) {
+    final normalized = username.trim().toLowerCase();
+    return '$normalized@players.melowlabs.app';
+  }
+
+  /// Registers the current player profile (or creates a new account) with a
+  /// Username (min 4 chars) and Password (min 6 chars), linking an existing
+  /// anonymous account so all trophies, friends, and stats are preserved!
+  Future<UserProfile> registerUsernameAndPassword({
+    required String username,
+    required String password,
+    String? nickname,
+  }) async {
+    final userErr = validateUsername(username);
+    if (userErr != null) throw Exception(userErr);
+    final passErr = validatePassword(password);
+    if (passErr != null) throw Exception(passErr);
+
+    final cleanUsername = username.trim();
+    final email = _syntheticEmailForUsername(cleanUsername);
+    final credential = EmailAuthProvider.credential(
+      email: email,
+      password: password,
+    );
+
+    final current = _auth.currentUser;
+    try {
+      if (current != null && current.isAnonymous) {
+        await current.linkWithCredential(credential);
+      } else if (current == null) {
+        await _auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      } else {
+        // Already registered user or switching — create or link
+        await _auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'email-already-in-use' ||
+          e.code == 'credential-already-in-use') {
+        throw Exception(
+          'Username "$cleanUsername" is already taken. Try another username.',
+        );
+      }
+      if (e.code == 'weak-password') {
+        throw Exception('Password must be at least 6 characters.');
+      }
+      throw Exception(e.message ?? 'Could not register username and password.');
+    }
+
+    final profile = await ensureProfile();
+    final nextNick = (nickname != null && nickname.trim().isNotEmpty)
+        ? nickname.trim()
+        : (profile.nickname.startsWith('Player_')
+            ? cleanUsername
+            : profile.nickname);
+
+    await _userRef(currentUid).set({
+      'nickname': nextNick,
+      'registeredUsername': cleanUsername,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    final updated = await _userRef(currentUid).get();
+    return UserProfile.fromFirestore(updated);
+  }
+
+  /// Signs in with an existing registered Username and Password.
+  Future<UserProfile> loginWithUsernameAndPassword({
+    required String username,
+    required String password,
+  }) async {
+    final userErr = validateUsername(username);
+    if (userErr != null) throw Exception(userErr);
+    final passErr = validatePassword(password);
+    if (passErr != null) throw Exception(passErr);
+
+    final cleanUsername = username.trim();
+    final email = _syntheticEmailForUsername(cleanUsername);
+    try {
+      await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential') {
+        throw Exception('Invalid username or password. Please try again.');
+      }
+      throw Exception(e.message ?? 'Login failed. Check your connection.');
+    }
+
+    final profile = await ensureProfile();
+    if (!profile.isRegisteredAccount) {
+      try {
+        await _userRef(currentUid).set({
+          'registeredUsername': cleanUsername,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {}
+    }
+    final refreshed = await _userRef(currentUid).get();
+    return UserProfile.fromFirestore(refreshed);
+  }
+
+  /// Signs out of the current session so the user can switch accounts on the login screen.
+  Future<void> signOutToLogin() async {
+    await _auth.signOut();
+  }
+
   Future<UserProfile> ensureProfile() async {
     final uid = currentUid;
     final ref = _userRef(uid);
@@ -515,7 +656,7 @@ class ProfileRepository {
         final effectivePlayed =
             raw.gamesPlayed >= minPlayed ? raw.gamesPlayed : minPlayed;
 
-        return PlayerStats(
+        final resolved = PlayerStats(
           gamesPlayed: effectivePlayed,
           wins: effectiveWins,
           losses: effectiveLosses,
@@ -528,6 +669,40 @@ class ProfileRepository {
           trophyCount:
               raw.trophyCount >= effectiveCups ? raw.trophyCount : effectiveCups,
         );
+
+        // Self-heal leaderboardEntries/{uid} so Global Top 100 rankings always match dashboard stats!
+        if (uid == currentUid &&
+            uid != 'offline_player' &&
+            (resolved.wins > 0 || resolved.tournamentsWon > 0)) {
+          try {
+            final lbRef = _db.collection('leaderboardEntries').doc(uid);
+            final lbSnap = await lbRef.get();
+            final lbData = lbSnap.data();
+            final lbWins = (lbData?['wins'] as num?)?.toInt() ?? -1;
+            final lbCups = (lbData?['tournamentsWon'] as num?)?.toInt() ?? -1;
+            if (!lbSnap.exists ||
+                lbWins < resolved.wins ||
+                lbCups < resolved.tournamentsWon) {
+              final userSnap = await _userRef(uid).get();
+              if (userSnap.exists && userSnap.data() != null) {
+                final p = UserProfile.fromFirestore(userSnap);
+                await lbRef.set({
+                  'publicNickname': p.globalDisplayNickname,
+                  'avatarId': p.globalDisplayAvatarId,
+                  'photoBase64': p.globalDisplayPhotoBase64,
+                  'wins': resolved.wins,
+                  'tournamentsWon': resolved.tournamentsWon,
+                  'bestStreak': resolved.bestStreak,
+                  'blitzWins': resolved.blitzWins,
+                  'optIn': p.isPublic && p.leaderboardOptIn,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+              }
+            }
+          } catch (_) {}
+        }
+
+        return resolved;
       } catch (_) {
         return raw;
       }

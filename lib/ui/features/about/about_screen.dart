@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 3.6.0 (Build 14)',
+            'Version 3.7.0 (Build 15)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -39,13 +39,25 @@ class AboutScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'What’s New in Version 3.6',
+                    'What’s New in Version 3.7',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 10),
+                  const _Bullet(
+                    text: '5-Player Friend Groups with 2-player matches, Final Match for the Melow Challenge Champion Cup 🏆, Group Rankings, Group Chat & Group Voice Calls',
+                  ),
+                  const _Bullet(
+                    text: 'Player Account Registration & Startup Login with Username (min 4 chars) & Password (min 6 chars) alongside Quick Anonymous Login',
+                  ),
+                  const _Bullet(
+                    text: 'Melow All-Challenge Cup, Melow Grand Challenge Cup & Melow Grand Slam Cup awarded when all Single Player or Multiplayer challenges are won',
+                  ),
+                  const _Bullet(
+                    text: 'Dual symbol selection (My Symbol & Bot Symbol) in Single Player and detailed Played • Won • Lost • Draw difficulty statistics',
+                  ),
                   const _Bullet(
                     text: 'Offline-ready Single Player (Player vs System) mode with Easy, Normal, Hard & Impossible difficulties',
                   ),

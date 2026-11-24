@@ -7,7 +7,10 @@ import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/footer.dart';
 
-/// Melow v3.0 Trophies & Achievements Cabinet displaying won Melow Cups live!
+/// Melow v3.7 Trophies & Achievements Cabinet clearly separating
+/// Single Player Achievements and Multiplayer Achievements, and awarding
+/// the Melow All-Challenge Cup, Melow Grand Challenge Cup, and Melow Grand Slam Cup
+/// when all challenges are won!
 class TrophiesPage extends StatefulWidget {
   const TrophiesPage({super.key, required this.services});
 
@@ -50,219 +53,365 @@ class _TrophiesPageState extends State<TrophiesPage> {
                 return StreamBuilder<List<UserAchievement>>(
                   stream: widget.services.profile.watchAchievements(uid),
                   builder: (context, achSnap) {
-                    final map = <String, UserAchievement>{
-                      for (final a in (achSnap.data ?? const <UserAchievement>[]))
-                        a.achievementId: a,
-                    };
-                    final unlockedCount =
-                        map.values.where((a) => a.isUnlocked).length;
+                    return ListenableBuilder(
+                      listenable: widget.services.singlePlayer,
+                      builder: (context, _) {
+                        final solo = widget.services.singlePlayer.stats;
+                        final soloMap =
+                            widget.services.singlePlayer.achievements;
+                        final multiMap = <String, UserAchievement>{
+                          for (final a in (achSnap.data ??
+                              const <UserAchievement>[]))
+                            a.achievementId: a,
+                        };
 
-                    final filtered = achievementsCatalog.where((def) {
-                      final unlocked = map[def.id]?.isUnlocked ?? false;
-                      if (_filter == 'unlocked') return unlocked;
-                      if (_filter == 'locked') return !unlocked;
-                      return true;
-                    }).toList(growable: false);
+                        final soloUnlockedCount = soloMap.values
+                            .where((a) => a.isUnlocked)
+                            .length;
+                        final multiUnlockedCount = multiMap.values
+                            .where((a) => a.isUnlocked)
+                            .length;
 
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 580),
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                          children: [
-                            // Cup & Achievement Header Summary
-                            Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(18),
-                                child: Row(
-                                  children: [
-                                    const Text(
-                                      '🏆',
-                                      style: TextStyle(fontSize: 48),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            '${trophies.length > stats.tournamentsWon ? trophies.length : stats.tournamentsWon} Melow Cups Won',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleLarge
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.w900,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            '$unlockedCount / ${achievementsCatalog.length} achievements unlocked',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w700,
-                                              color: scheme.primary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            // Won Melow Cups Shelf (prominently displayed!)
-                            if (trophies.isNotEmpty) ...[
-                              const SizedBox(height: 14),
-                              const Text(
-                                'Your Melow Cup Collection',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              for (final t in trophies)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Card(
-                                    color: AppTheme.goldAccent
-                                        .withValues(alpha: 0.12),
-                                    child: ListTile(
-                                      leading: const Text(
-                                        '🏆',
-                                        style: TextStyle(fontSize: 30),
-                                      ),
-                                      title: Text(
-                                        t.title,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        t.awardedAt != null
-                                            ? 'Won on ${t.awardedAt!.toLocal().toString().substring(0, 10)}'
-                                            : 'Verified Melow Cup',
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                            const SizedBox(height: 14),
-                            const Text(
-                              'Achievements',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: SegmentedButton<String>(
-                                showSelectedIcon: false,
-                                segments: const [
-                                  ButtonSegment(
-                                    value: 'all',
-                                    label: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text('All'),
-                                    ),
-                                  ),
-                                  ButtonSegment(
-                                    value: 'unlocked',
-                                    label: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text('Unlocked'),
-                                    ),
-                                  ),
-                                  ButtonSegment(
-                                    value: 'locked',
-                                    label: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text('Locked'),
-                                    ),
-                                  ),
-                                ],
-                                selected: {_filter},
-                                onSelectionChanged: (v) =>
-                                    setState(() => _filter = v.first),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            if (filtered.isEmpty)
-                              Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Text(
-                                    _filter == 'unlocked'
-                                        ? 'Win a tournament cup to unlock your first trophy!'
-                                        : 'You have unlocked every achievement — Melow Legend!',
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              )
-                            else
-                              for (final def in filtered)
-                                _AchievementTile(
-                                  definition: def,
-                                  record: map[def.id],
-                                  tierColor: _tierColor(def.tier),
-                                ),
-                            const SizedBox(height: 16),
-                            ListenableBuilder(
-                              listenable: widget.services.singlePlayer,
-                              builder: (context, _) {
-                                final solo =
-                                    widget.services.singlePlayer.stats;
-                                final soloAchievements = widget
-                                    .services.singlePlayer.achievements;
-                                return Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
+                        final allSoloWon = soloUnlockedCount >=
+                            soloAchievementsCatalog.length;
+                        final allMultiWon =
+                            multiUnlockedCount >= achievementsCatalog.length;
+                        final allGrandSlamWon = allSoloWon && allMultiWon;
+
+                        final filteredSolo =
+                            soloAchievementsCatalog.where((def) {
+                          final unlocked =
+                              soloMap[def.id]?.isUnlocked ?? false;
+                          if (_filter == 'unlocked') return unlocked;
+                          if (_filter == 'locked') return !unlocked;
+                          return true;
+                        }).toList(growable: false);
+
+                        final filteredMulti = achievementsCatalog.where((def) {
+                          final unlocked =
+                              multiMap[def.id]?.isUnlocked ?? false;
+                          if (_filter == 'unlocked') return unlocked;
+                          if (_filter == 'locked') return !unlocked;
+                          return true;
+                        }).toList(growable: false);
+
+                        final onlineCupCount =
+                            trophies.length > stats.tournamentsWon
+                                ? trophies.length
+                                : stats.tournamentsWon;
+                        final specialCupsWon = (allSoloWon ? 1 : 0) +
+                            (allMultiWon ? 1 : 0) +
+                            (allGrandSlamWon ? 1 : 0);
+                        final totalCups =
+                            onlineCupCount + solo.soloCups + specialCupsWon;
+
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 580),
+                            child: ListView(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                              children: [
+                                // Cup & Achievement Header Summary
+                                Card(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(18),
+                                    child: Row(
                                       children: [
-                                        const Expanded(
-                                          child: Text(
-                                            'Solo Mode Achievements',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
+                                        const Text(
+                                          '🏆',
+                                          style: TextStyle(fontSize: 48),
                                         ),
-                                        Text(
-                                          '🏆 ${solo.soloCups} Solo Cups',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w800,
-                                            color: AppTheme.goldAccent,
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '$totalCups Melow Cups Won',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleLarge
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                    ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Single Player: $soloUnlockedCount/${soloAchievementsCatalog.length} • Multiplayer: $multiUnlockedCount/${achievementsCatalog.length}',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: scheme.primary,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
-                                    for (final def in soloAchievementsCatalog)
-                                      _AchievementTile(
-                                        definition: def,
-                                        record: soloAchievements[def.id],
-                                        tierColor: _tierColor(def.tier),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                // Grand Challenge Cups Showcase (Awarded when all challenges are won!)
+                                const Text(
+                                  'Melow Championship Cups',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                _GrandCupCard(
+                                  title: 'Melow All-Challenge Cup',
+                                  subtitle:
+                                      'Win all ${soloAchievementsCatalog.length} Single Player challenges ($soloUnlockedCount/${soloAchievementsCatalog.length})',
+                                  unlocked: allSoloWon,
+                                  icon: '🏆',
+                                ),
+                                _GrandCupCard(
+                                  title: 'Melow Grand Challenge Cup',
+                                  subtitle:
+                                      'Win all ${achievementsCatalog.length} Multiplayer challenges ($multiUnlockedCount/${achievementsCatalog.length})',
+                                  unlocked: allMultiWon,
+                                  icon: '👑',
+                                ),
+                                _GrandCupCard(
+                                  title: 'Melow Grand Slam Cup',
+                                  subtitle:
+                                      'Win every Single Player and Multiplayer challenge in Melow Tic Tac Toe!',
+                                  unlocked: allGrandSlamWon,
+                                  icon: '🌟',
+                                ),
+                                // Won Online & Group Tournament Melow Cups Shelf
+                                if (trophies.isNotEmpty) ...[
+                                  const SizedBox(height: 14),
+                                  const Text(
+                                    'Your Won Tournament Cups',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  for (final t in trophies)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 8),
+                                      child: Card(
+                                        color: AppTheme.goldAccent
+                                            .withValues(alpha: 0.12),
+                                        child: ListTile(
+                                          leading: const Text(
+                                            '🏆',
+                                            style: TextStyle(fontSize: 30),
+                                          ),
+                                          title: Text(
+                                            t.title,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          subtitle: Text(
+                                            t.awardedAt != null
+                                                ? 'Won on ${t.awardedAt!.toLocal().toString().substring(0, 10)}'
+                                                : 'Verified Melow Cup',
+                                          ),
+                                        ),
                                       ),
+                                    ),
+                                ],
+                                const SizedBox(height: 14),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: SegmentedButton<String>(
+                                    showSelectedIcon: false,
+                                    segments: const [
+                                      ButtonSegment(
+                                        value: 'all',
+                                        label: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text('All'),
+                                        ),
+                                      ),
+                                      ButtonSegment(
+                                        value: 'unlocked',
+                                        label: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text('Unlocked'),
+                                        ),
+                                      ),
+                                      ButtonSegment(
+                                        value: 'locked',
+                                        label: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text('Locked'),
+                                        ),
+                                      ),
+                                    ],
+                                    selected: {_filter},
+                                    onSelectionChanged: (v) =>
+                                        setState(() => _filter = v.first),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                // 1. Single Player Achievements Section
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Single Player Achievements',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '$soloUnlockedCount / ${soloAchievementsCatalog.length} • 🏆 ${solo.soloCups} Cups',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppTheme.goldAccent,
+                                      ),
+                                    ),
                                   ],
-                                );
-                              },
+                                ),
+                                const SizedBox(height: 8),
+                                if (filteredSolo.isEmpty)
+                                  Card(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(18),
+                                      child: Text(
+                                        _filter == 'unlocked'
+                                            ? 'Play Single Player to unlock your first Solo achievement!'
+                                            : 'All Single Player achievements unlocked — Melow All-Challenge Cup Champion!',
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  for (final def in filteredSolo)
+                                    _AchievementTile(
+                                      definition: def,
+                                      record: soloMap[def.id],
+                                      tierColor: _tierColor(def.tier),
+                                    ),
+                                const SizedBox(height: 16),
+                                // 2. Multiplayer Achievements Section
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Multiplayer Achievements',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '$multiUnlockedCount / ${achievementsCatalog.length} • 🏆 $onlineCupCount Cups',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: scheme.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                if (filteredMulti.isEmpty)
+                                  Card(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(18),
+                                      child: Text(
+                                        _filter == 'unlocked'
+                                            ? 'Win a multiplayer match or tournament to unlock your first trophy!'
+                                            : 'All Multiplayer achievements unlocked — Melow Grand Challenge Cup Champion!',
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  for (final def in filteredMulti)
+                                    _AchievementTile(
+                                      definition: def,
+                                      record: multiMap[def.id],
+                                      tierColor: _tierColor(def.tier),
+                                    ),
+                                const MelowFooter(),
+                              ],
                             ),
-                            const MelowFooter(),
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      },
                     );
                   },
                 );
               },
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _GrandCupCard extends StatelessWidget {
+  const _GrandCupCard({
+    required this.title,
+    required this.subtitle,
+    required this.unlocked,
+    required this.icon,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool unlocked;
+  final String icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        color: unlocked
+            ? AppTheme.goldAccent.withValues(alpha: 0.18)
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        child: ListTile(
+          leading: Opacity(
+            opacity: unlocked ? 1.0 : 0.4,
+            child: Text(icon, style: const TextStyle(fontSize: 32)),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12),
+          ),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: unlocked
+                  ? AppTheme.goldAccent.withValues(alpha: 0.25)
+                  : scheme.outlineVariant.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              unlocked ? 'WON 🏆' : 'Locked',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: unlocked ? AppTheme.goldAccent : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ),
       ),
     );

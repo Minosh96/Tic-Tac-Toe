@@ -1,9 +1,11 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:melow_tic_tac_toe/data/repositories/profile_repository.dart';
 import 'package:melow_tic_tac_toe/data/repositories/single_player_repository.dart';
 import 'package:melow_tic_tac_toe/domain/bot_engine.dart';
 import 'package:melow_tic_tac_toe/domain/game_engine.dart';
+import 'package:melow_tic_tac_toe/domain/models/group_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -310,6 +312,44 @@ void main() {
       expect(repo.stats.currentStreak, 5);
       expect(repo.achievements['easy_master']?.isUnlocked, isTrue);
       expect(repo.achievements['five_consecutive_wins']?.isUnlocked, isTrue);
+    });
+  });
+
+  group('Username/Password Validation & Friend Group (Max 5) Rankings', () {
+    test('validates username and password minimum character requirements', () {
+      expect(ProfileRepository.validateUsername('abc'), isNotNull);
+      expect(ProfileRepository.validateUsername('minosh_96'), isNull);
+      expect(ProfileRepository.validatePassword('12345'), isNotNull);
+      expect(ProfileRepository.validatePassword('secret123'), isNull);
+    });
+
+    test('FriendGroup computes sorted individual rankings for up to 5 members', () {
+      const group = FriendGroup(
+        id: 'g1',
+        name: 'Champions Squad',
+        creatorUid: 'u1',
+        memberUids: ['u1', 'u2', 'u3'],
+        memberNames: {'u1': 'Minosh', 'u2': 'Savidya', 'u3': 'Vishmika'},
+        memberAvatars: {'u1': 'astro', 'u2': 'fox', 'u3': 'panda'},
+        tournamentStatus: 'completed',
+        championUid: 'u2',
+        championName: 'Savidya',
+        cupName: 'Melow Challenge Champion Cup',
+        winsByUid: {'u1': 2, 'u2': 3, 'u3': 1},
+        lossesByUid: {'u1': 1, 'u2': 0, 'u3': 2},
+        drawsByUid: {'u1': 1, 'u2': 0, 'u3': 1},
+        cupsByUid: {'u1': 0, 'u2': 1, 'u3': 0},
+      );
+
+      final rankings = group.rankings;
+      expect(rankings.length, 3);
+      expect(rankings[0].nickname, 'Savidya');
+      expect(rankings[0].cups, 1);
+      expect(rankings[0].wins, 3);
+      expect(rankings[1].nickname, 'Minosh');
+      expect(rankings[1].points, 7); // 2*3 + 1
+      expect(rankings[2].nickname, 'Vishmika');
+      expect(rankings[2].points, 4); // 1*3 + 1
     });
   });
 }

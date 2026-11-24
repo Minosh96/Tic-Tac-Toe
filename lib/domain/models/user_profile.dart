@@ -43,6 +43,7 @@ class UserProfile {
     this.profileVisibility = ProfileVisibility.public,
     this.hidePhotoGlobally = false,
     this.hideNameGlobally = false,
+    this.registeredUsername,
     this.createdAt,
     this.updatedAt,
   });
@@ -58,8 +59,12 @@ class UserProfile {
   final ProfileVisibility profileVisibility;
   final bool hidePhotoGlobally;
   final bool hideNameGlobally;
+  final String? registeredUsername;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  bool get isRegisteredAccount =>
+      registeredUsername != null && registeredUsername!.trim().isNotEmpty;
 
   bool get hasCustomPhoto => photoBase64 != null && photoBase64!.isNotEmpty;
 
@@ -123,6 +128,7 @@ class UserProfile {
       profileVisibility: vis,
       hidePhotoGlobally: data['hidePhotoGlobally'] == true,
       hideNameGlobally: data['hideNameGlobally'] == true,
+      registeredUsername: data['registeredUsername'] as String?,
       createdAt: data['createdAt'] is Timestamp
           ? (data['createdAt'] as Timestamp).toDate()
           : null,
