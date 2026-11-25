@@ -250,7 +250,10 @@ class FriendGroup {
   final Map<String, DateTime> clearedAtBy;
   final DateTime? createdAt;
 
-  /// Returns sorted Group Individual Rankings for all members in the group.
+  /// Returns Group Members / Individual Rankings:
+  /// - When no matches have been played yet (all members at 0 played and 0 cups),
+  ///   preserves the exact join order `1, 2, 3, 4, 5` (`memberUids` order).
+  /// - Once matches are played or the tournament completes, sorts by Cups, Points, Wins, and Nickname.
   List<GroupMemberStanding> get rankings {
     final list = <GroupMemberStanding>[];
     for (final uid in memberUids) {
@@ -270,6 +273,12 @@ class FriendGroup {
           cups: c,
         ),
       );
+    }
+    final anyPlayedOrCups =
+        list.any((m) => m.played > 0 || m.cups > 0) ||
+        tournamentStatus == 'completed';
+    if (!anyPlayedOrCups) {
+      return list;
     }
     list.sort((a, b) {
       final cupCmp = b.cups.compareTo(a.cups);

@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 3.9.0 (Build 18)',
+            'Version 3.9.1 (Build 19)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -39,13 +39,22 @@ class AboutScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'What’s New in Version 3.9',
+                    'What’s New in Version 3.9.1',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 10),
+                  const _Bullet(
+                    text: 'New Melow Tic Tac Toe app logo across launcher icons, native splash screen, headers, and share cards',
+                  ),
+                  const _Bullet(
+                    text: 'Home tab Your Arena Stats card showing Played, Wins, Losses, Draws, Streak & Melow Cups separately for Single Player and Multiplayer',
+                  ),
+                  const _Bullet(
+                    text: 'Group members numbered 1, 2, 3, 4, 5 before tournament completion, with full Match Results, Final Rankings & Shareable Tournament Result Card upon completion',
+                  ),
                   const _Bullet(
                     text: 'Auto-generated Group Tournament Fixtures (User1 vs User2) with private Room Codes visible only to the 2 match participants & end-of-tournament Champion 🥇 / Runner-Up 🥈 Summary',
                   ),

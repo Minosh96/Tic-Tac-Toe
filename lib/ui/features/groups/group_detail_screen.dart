@@ -1,8 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/services/app_services.dart';
 import '../../../core/services/image_helper.dart';
@@ -12,6 +17,8 @@ import '../../../domain/models/social_models.dart';
 import '../../../domain/models/user_profile.dart';
 import '../../core/app_theme.dart';
 import '../../core/widgets/live_user_avatar.dart';
+import '../../core/widgets/melow_avatar.dart';
+import '../../core/widgets/melow_logo.dart';
 import '../chat/voice_call_screen.dart';
 import '../room/room_page.dart';
 
@@ -471,7 +478,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        // End-of-Tournament Summary Card (Champion 🥇 & Runner-Up 🥈)
+                        // End-of-Tournament Summary Card (Match Results, Final Rankings & Shareable Game Card)
                         if (group.tournamentStatus == 'completed' &&
                             group.championName.isNotEmpty) ...[
                           Card(
@@ -480,9 +487,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             child: Padding(
                               padding: const EdgeInsets.all(16),
                               child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   const Text(
-                                    '🏆 Tournament Summary',
+                                    '🏆 Tournament Results & Summary',
+                                    textAlign: TextAlign.center,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w900,
                                       fontSize: 17,
@@ -494,43 +503,122 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
                                       color: scheme.surface
-                                          .withValues(alpha: 0.8),
+                                          .withValues(alpha: 0.85),
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                     child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          '🥇 Champion: ${group.championName}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 16,
-                                            color: AppTheme.goldAccent,
+                                        Center(
+                                          child: Text(
+                                            '🥇 Champion: ${group.championName}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 16,
+                                              color: AppTheme.goldAccent,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(height: 4),
-                                        Text(
-                                          'Won the ${group.cupName} 🏆',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
+                                        Center(
+                                          child: Text(
+                                            'Won the ${group.cupName} 🏆',
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                           ),
                                         ),
                                         if (group.effectiveRunnerUpName
                                             .isNotEmpty) ...[
-                                          const Divider(height: 16),
-                                          Text(
-                                            '🥈 Runner-Up: ${group.effectiveRunnerUpName}',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 14,
-                                              color: scheme.primary,
+                                          const SizedBox(height: 6),
+                                          Center(
+                                            child: Text(
+                                              '🥈 Runner-Up: ${group.effectiveRunnerUpName}',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 14,
+                                                color: scheme.primary,
+                                              ),
                                             ),
                                           ),
+                                        ],
+                                        if (fixtures.isNotEmpty) ...[
+                                          const Divider(height: 18),
+                                          const Text(
+                                            'Match Results:',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          for (final fx in fixtures)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 3,
+                                              ),
+                                              child: Text(
+                                                '• ${fx.isFinalMatch ? 'Final' : 'Match ${fx.matchNumber}'} (${fx.player1Name} vs ${fx.player2Name}): ${fx.resultText.isNotEmpty ? fx.resultText : fx.statusLabel}',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                        if (standings.isNotEmpty) ...[
+                                          const Divider(height: 18),
+                                          const Text(
+                                            'Final Group Rankings:',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          for (var r = 0;
+                                              r < standings.length;
+                                              r++)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                bottom: 3,
+                                              ),
+                                              child: Text(
+                                                '${r == 0 ? '🥇 1.' : (r == 1 ? '🥈 2.' : (r == 2 ? '🥉 3.' : '${r + 1}.'))} ${standings[r].nickname} — ${standings[r].points} pts (W:${standings[r].wins} L:${standings[r].losses} D:${standings[r].draws})',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
                                         ],
                                       ],
                                     ),
                                   ),
                                   const SizedBox(height: 12),
+                                  FilledButton.tonalIcon(
+                                    onPressed: () =>
+                                        showModalBottomSheet<void>(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      builder: (_) =>
+                                          GroupTournamentShareSheet(
+                                        group: group,
+                                        standings: standings,
+                                        fixtures: fixtures,
+                                      ),
+                                    ),
+                                    icon: const Icon(
+                                      Icons.share_rounded,
+                                      size: 18,
+                                    ),
+                                    label: const Text(
+                                      'Share Tournament Result Card',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
                                   Row(
                                     children: [
                                       Expanded(
@@ -634,10 +722,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                     },
                             ),
                         const SizedBox(height: 16),
-                        // Group Individual Rankings Table
-                        const Text(
-                          'Group Individual Rankings',
-                          style: TextStyle(
+                        // Group Individual Rankings / Member List (Shows 1, 2, 3, 4, 5 before completion; shows medals & rankings after completion)
+                        Text(
+                          group.tournamentStatus == 'completed'
+                              ? 'Final Group Rankings'
+                              : 'Group Members & Standings',
+                          style: const TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 16,
                           ),
@@ -651,23 +741,37 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                 leading: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    SizedBox(
-                                      width: 28,
+                                    Container(
+                                      width: 30,
+                                      height: 30,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: group.tournamentStatus ==
+                                                'completed'
+                                            ? AppTheme.goldAccent
+                                                .withValues(alpha: 0.16)
+                                            : scheme.primary
+                                                .withValues(alpha: 0.14),
+                                        shape: BoxShape.circle,
+                                      ),
                                       child: Text(
-                                        i == 0
-                                            ? '🥇'
-                                            : (i == 1
-                                                ? '🥈'
-                                                : (i == 2
-                                                    ? '🥉'
-                                                    : '#${i + 1}')),
-                                        style: const TextStyle(
+                                        group.tournamentStatus == 'completed'
+                                            ? (i == 0
+                                                ? '🥇'
+                                                : (i == 1
+                                                    ? '🥈'
+                                                    : (i == 2
+                                                        ? '🥉'
+                                                        : '${i + 1}')))
+                                            : '${i + 1}',
+                                        style: TextStyle(
                                           fontWeight: FontWeight.w900,
-                                          fontSize: 16,
+                                          fontSize: 14,
+                                          color: scheme.primary,
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
+                                    const SizedBox(width: 8),
                                     LiveUserAvatar(
                                       services: widget.services,
                                       uid: standings[i].uid,
@@ -1111,6 +1215,325 @@ class _FixtureCard extends StatelessWidget {
                   ],
                 ),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shareable Group Tournament Result Card Sheet & PNG Exporter.
+/// Displays the group name, Champion 🥇, Runner-Up 🥈, Final Group Rankings,
+/// and Match Results, and exports a high-resolution PNG via SharePlus.
+class GroupTournamentShareSheet extends StatefulWidget {
+  const GroupTournamentShareSheet({
+    super.key,
+    required this.group,
+    required this.standings,
+    required this.fixtures,
+  });
+
+  final FriendGroup group;
+  final List<GroupMemberStanding> standings;
+  final List<GroupFixture> fixtures;
+
+  @override
+  State<GroupTournamentShareSheet> createState() =>
+      _GroupTournamentShareSheetState();
+}
+
+class _GroupTournamentShareSheetState extends State<GroupTournamentShareSheet> {
+  final GlobalKey _cardKey = GlobalKey();
+  bool _exporting = false;
+
+  Future<void> _sharePng() async {
+    setState(() => _exporting = true);
+    try {
+      final boundary =
+          _cardKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        throw Exception('Card preview is still rendering.');
+      }
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) {
+        throw Exception('Could not encode tournament card PNG.');
+      }
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/melow_group_tournament_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'image/png')],
+          text:
+              '${widget.group.championName} won the ${widget.group.cupName} in ${widget.group.name} (Melow Tic Tac Toe)! 🏆',
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not share tournament card: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final group = widget.group;
+    final standings = widget.standings;
+    final fixtures = widget.fixtures;
+    final champAvatar = group.memberAvatars[group.championUid] ?? 'astro';
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 12, 18, 22),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Share Tournament Result Card',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 14),
+              RepaintBoundary(
+                key: _cardKey,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        AppTheme.darkBackground,
+                        Color(0xFF281B5A),
+                        Color(0xFF152546),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: AppTheme.goldAccent.withValues(alpha: 0.75),
+                      width: 2,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const MelowLogo(
+                            size: 36,
+                            borderRadius: 10,
+                            showGlow: false,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Melow Tic Tac Toe',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                Text(
+                                  group.name,
+                                  style: const TextStyle(
+                                    color: AppTheme.cyanAccent,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Text('🏆', style: TextStyle(fontSize: 28)),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Center(
+                        child: Column(
+                          children: [
+                            Text(
+                              group.cupName.toUpperCase(),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppTheme.goldAccent,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                MelowAvatar(
+                                  avatarId: champAvatar,
+                                  size: 46,
+                                  borderColor: AppTheme.goldAccent,
+                                ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '🥇 Champion: ${group.championName}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    if (group.effectiveRunnerUpName.isNotEmpty)
+                                      Text(
+                                        '🥈 Runner-Up: ${group.effectiveRunnerUpName}',
+                                        style: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.82),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Final Rankings',
+                              style: TextStyle(
+                                color: AppTheme.goldAccent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            for (var i = 0; i < standings.length; i++)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 3),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${i == 0 ? '🥇 1.' : (i == 1 ? '🥈 2.' : (i == 2 ? '🥉 3.' : '${i + 1}.'))} ${standings[i].nickname}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${standings[i].points} pts (W:${standings[i].wins} L:${standings[i].losses} D:${standings[i].draws})',
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.78),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (fixtures.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Match Results',
+                                style: TextStyle(
+                                  color: AppTheme.cyanAccent,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              for (final fx in fixtures)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 2),
+                                  child: Text(
+                                    '• ${fx.isFinalMatch ? 'Final' : 'M${fx.matchNumber}'} (${fx.player1Name} vs ${fx.player2Name}): ${fx.resultText.isNotEmpty ? fx.resultText : fx.statusLabel}',
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.85),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Center(
+                        child: Text(
+                          'Developed at Melow Labs',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.55),
+                            fontSize: 10,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _exporting ? null : _sharePng,
+                  icon: _exporting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.share_rounded),
+                  label: Text(
+                    _exporting
+                        ? 'Preparing PNG…'
+                        : 'Share Tournament Result Card',
+                  ),
+                ),
+              ),
             ],
           ),
         ),

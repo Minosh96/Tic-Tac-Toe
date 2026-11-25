@@ -672,60 +672,212 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         const SizedBox(height: 14),
-                        // Stats & Trophies Summary
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+                        // Stats & Trophies Summary — Single Player & Multiplayer separately + Melow Cups
+                        ListenableBuilder(
+                          listenable: widget.services.singlePlayer,
+                          builder: (context, _) {
+                            final solo = widget.services.singlePlayer.stats;
+                            final totalMelowCups =
+                                stats.tournamentsWon + solo.soloCups;
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Expanded(
-                                      child: Text(
-                                        'Your Arena Stats',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 15,
+                                    Row(
+                                      children: [
+                                        const Expanded(
+                                          child: Text(
+                                            'Your Arena Stats',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 16,
+                                            ),
+                                          ),
                                         ),
+                                        InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          onTap: () => widget.onNavigateTab(2),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.goldAccent
+                                                  .withValues(alpha: 0.18),
+                                              borderRadius:
+                                                  BorderRadius.circular(18),
+                                              border: Border.all(
+                                                color: AppTheme.goldAccent
+                                                    .withValues(alpha: 0.55),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              '🏆 $totalMelowCups Melow Cups',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 12,
+                                                color: AppTheme.goldAccent,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    // 1. Single Player Arena Stats
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: scheme.surfaceContainerHighest
+                                            .withValues(alpha: 0.45),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.smart_toy_rounded,
+                                                size: 16,
+                                                color: AppTheme.goldAccent,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              const Expanded(
+                                                child: Text(
+                                                  'Single Player',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                              Text(
+                                                '🏆 ${solo.soloCups} Solo Cups',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AppTheme.goldAccent,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              _MiniStat(
+                                                label: 'Played',
+                                                value: '${solo.totalGames}',
+                                                color: scheme.primary,
+                                              ),
+                                              _MiniStat(
+                                                label: 'Wins',
+                                                value: '${solo.wins}',
+                                                color: Colors.green,
+                                              ),
+                                              _MiniStat(
+                                                label: 'Losses',
+                                                value: '${solo.losses}',
+                                                color: scheme.error,
+                                              ),
+                                              _MiniStat(
+                                                label: 'Draws',
+                                                value: '${solo.draws}',
+                                                color: scheme.secondary,
+                                              ),
+                                              _MiniStat(
+                                                label: 'Streak',
+                                                value: '${solo.currentStreak}🔥',
+                                                color: AppTheme.goldAccent,
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    TextButton(
-                                      onPressed: () => widget.onNavigateTab(2),
-                                      child: Text(
-                                        '🏆 ${stats.tournamentsWon} Cups',
+                                    const SizedBox(height: 10),
+                                    // 2. Multiplayer Arena Stats
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: scheme.surfaceContainerHighest
+                                            .withValues(alpha: 0.45),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.public_rounded,
+                                                size: 16,
+                                                color: AppTheme.cyanAccent,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              const Expanded(
+                                                child: Text(
+                                                  'Multiplayer',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                              Text(
+                                                '🏆 ${stats.tournamentsWon} Online Cups',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AppTheme.cyanAccent,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              _MiniStat(
+                                                label: 'Played',
+                                                value: '${stats.gamesPlayed}',
+                                                color: scheme.primary,
+                                              ),
+                                              _MiniStat(
+                                                label: 'Wins',
+                                                value: '${stats.wins}',
+                                                color: Colors.green,
+                                              ),
+                                              _MiniStat(
+                                                label: 'Losses',
+                                                value: '${stats.losses}',
+                                                color: scheme.error,
+                                              ),
+                                              _MiniStat(
+                                                label: 'Draws',
+                                                value: '${stats.draws}',
+                                                color: scheme.secondary,
+                                              ),
+                                              _MiniStat(
+                                                label: 'Streak',
+                                                value: '${stats.currentStreak}🔥',
+                                                color: AppTheme.goldAccent,
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    _MiniStat(
-                                      label: 'Wins',
-                                      value: '${stats.wins}',
-                                      color: Colors.green,
-                                    ),
-                                    _MiniStat(
-                                      label: 'Losses',
-                                      value: '${stats.losses}',
-                                      color: scheme.error,
-                                    ),
-                                    _MiniStat(
-                                      label: 'Draws',
-                                      value: '${stats.draws}',
-                                      color: scheme.secondary,
-                                    ),
-                                    _MiniStat(
-                                      label: 'Streak',
-                                      value: '${stats.currentStreak}🔥',
-                                      color: AppTheme.goldAccent,
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 14),
                         // Achievement Highlight
