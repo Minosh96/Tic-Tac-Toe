@@ -11,6 +11,7 @@ import '../../core/app_theme.dart';
 import '../../core/widgets/live_user_avatar.dart';
 import '../chat/voice_call_screen.dart';
 import '../friends/friends_page.dart';
+import '../groups/group_voice_call_screen.dart';
 import '../home/home_page.dart';
 import '../leaderboard/leaderboard_page.dart';
 import '../profile/profile_page.dart';
@@ -303,7 +304,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  incoming.callerName,
+                                  incoming.isGroupCall
+                                      ? '${incoming.callerName} • ${incoming.groupName ?? 'Group'}'
+                                      : incoming.callerName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -311,9 +314,11 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                const Text(
-                                  'Incoming voice call…',
-                                  style: TextStyle(
+                                Text(
+                                  incoming.isGroupCall
+                                      ? 'Incoming group voice call…'
+                                      : 'Incoming voice call…',
+                                  style: const TextStyle(
                                     color: AppTheme.cyanAccent,
                                     fontSize: 12,
                                   ),
@@ -348,15 +353,30 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                               PushNotificationService.cancelCallNotification(
                                 incoming.callId,
                               );
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => VoiceCallScreen.incoming(
-                                    services: widget.services,
-                                    session: incoming,
+                              if (incoming.isGroupCall) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => GroupVoiceCallScreen(
+                                      services: widget.services,
+                                      groupId: incoming.groupId!,
+                                      myName: incoming.calleeName,
+                                      myAvatar: 'astro',
+                                      incomingAlertCallId: incoming.callId,
+                                    ),
                                   ),
-                                ),
-                              );
+                                );
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => VoiceCallScreen.incoming(
+                                      services: widget.services,
+                                      session: incoming,
+                                    ),
+                                  ),
+                                );
+                              }
                             },
                           ),
                         ],

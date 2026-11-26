@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../../domain/models/group_models.dart';
 import '../../domain/models/social_models.dart';
 
 enum VoiceTransportMode { connecting, webrtcLive, fullDuplexRelay }
@@ -437,6 +438,174 @@ class VoiceCallRepository {
       });
     } catch (_) {}
   }
+
+  /// Starts or joins a multi-person Group Voice Call (up to 5 members in a single call).
+  /// - If no call is currently ongoing in the group (`ringMembersIfStarting == true`),
+  ///   rings all other group members simultaneously so their phones ring and show an Answer banner.
+  /// - If a group call is already ongoing, or if a member previously left and taps "Rejoin Group Call",
+  ///   adds the current member back into `activeCall.activeMemberUids`.
+  Future<ActiveGroupVoiceCall> startOrJoinGroupVoiceCall({
+    required FriendGroup group,
+    required String myName,
+    required String myAvatar,
+    String? incomingAlertCallId,
+  }) async {
+    final myUid = currentUid;
+    await _requestNativeMicPermission();
+    await _configureAndroidAudio(enabled: true, speaker: true);
+
+    final groupRef = _db.collection('groups').doc(group.id);
+    bool shouldRingMembers = false;
+
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(groupRef);
+      if (!snap.exists || snap.data() == null) {
+        throw Exception('This group no longer exists.');
+      }
+      final g = FriendGroup.fromFirestore(snap);
+      final currentCall = g.activeCall;
+      if (currentCall != null && currentCall.isOngoing) {
+        // Ongoing call -> add or re-add this member!
+        final nextMembers = <String>[
+          ...currentCall.activeMemberUids,
+          if (!currentCall.activeMemberUids.contains(myUid)) myUid,
+        ];
+        final updatedCall = GroupActiveCall(
+          callSessionId: currentCall.callSessionId,
+          initiatorUid: currentCall.initiatorUid,
+          initiatorName: currentCall.initiatorName,
+          status: 'active',
+          activeMemberUids: nextMembers.take(5).toList(growable: false),
+        );
+        tx.update(groupRef, {
+          'activeCall': updatedCall.toMap(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Brand new group call -> ring all other members in the group!
+        shouldRingMembers = true;
+        final sessionId =
+            'gcall_${DateTime.now().millisecondsSinceEpoch}';
+        final newCall = GroupActiveCall(
+          callSessionId: sessionId,
+          initiatorUid: myUid,
+          initiatorName: myName,
+          status: 'active',
+          activeMemberUids: [myUid],
+        );
+        tx.update(groupRef, {
+          'activeCall': newCall.toMap(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
+
+    // If answering from an incoming ringing alert doc, mark that ringing alert doc as active.
+    if (incomingAlertCallId != null && incomingAlertCallId.isNotEmpty) {
+      await updateCallStatus(incomingAlertCallId, 'active');
+    }
+
+    // Ring all other members in the group so their phones ring and show the incoming Group Call banner!
+    if (shouldRingMembers) {
+      for (final memberUid in group.memberUids) {
+        if (memberUid == myUid) continue;
+        final memberName = group.memberNames[memberUid] ?? 'Group Member';
+        try {
+          await _db.collection('calls').add({
+            'callerUid': myUid,
+            'calleeUid': memberUid,
+            'callerName': myName,
+            'callerAvatar': myAvatar,
+            'calleeName': memberName,
+            'groupId': group.id,
+            'groupName': group.name,
+            'status': 'ringing',
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } catch (_) {}
+      }
+    }
+
+    final handle = ActiveGroupVoiceCall._(
+      groupId: group.id,
+      myUid: myUid,
+      groupRef: groupRef,
+      onLeaveRemote: () => _leaveGroupCallRemote(group.id, myUid),
+      onRestoreAudio: () => _configureAndroidAudio(enabled: false),
+      onSetSpeaker: (speaker) async {
+        try {
+          await Helper.setSpeakerphoneOn(speaker);
+        } catch (_) {}
+        try {
+          await _audioChannel
+              .invokeMethod('setSpeakerphone', {'speaker': speaker});
+        } catch (_) {}
+      },
+    );
+    await handle._start();
+    return handle;
+  }
+
+  Future<void> _leaveGroupCallRemote(String groupId, String uid) async {
+    final groupRef = _db.collection('groups').doc(groupId);
+    bool callEndedCompletely = false;
+    try {
+      await _db.runTransaction((tx) async {
+        final snap = await tx.get(groupRef);
+        if (!snap.exists || snap.data() == null) return;
+        final g = FriendGroup.fromFirestore(snap);
+        final currentCall = g.activeCall;
+        if (currentCall == null) return;
+        final remaining = currentCall.activeMemberUids
+            .where((m) => m != uid)
+            .toList(growable: false);
+        if (remaining.isEmpty) {
+          callEndedCompletely = true;
+          tx.update(groupRef, {
+            'activeCall': GroupActiveCall(
+              callSessionId: currentCall.callSessionId,
+              initiatorUid: currentCall.initiatorUid,
+              initiatorName: currentCall.initiatorName,
+              status: 'ended',
+              activeMemberUids: const <String>[],
+            ).toMap(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          tx.update(groupRef, {
+            'activeCall': GroupActiveCall(
+              callSessionId: currentCall.callSessionId,
+              initiatorUid: currentCall.initiatorUid,
+              initiatorName: currentCall.initiatorName,
+              status: 'active',
+              activeMemberUids: remaining,
+            ).toMap(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      });
+    } catch (_) {}
+
+    // If the last member left the group call, cancel any pending ringing alerts for this group.
+    if (callEndedCompletely) {
+      try {
+        final ringingDocs = await _db
+            .collection('calls')
+            .where('callerUid', isEqualTo: uid)
+            .get();
+        for (final doc in ringingDocs.docs) {
+          final d = doc.data();
+          if (d['groupId'] == groupId && d['status'] == 'ringing') {
+            await doc.reference.update({
+              'status': 'ended',
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      } catch (_) {}
+    }
+  }
 }
 
 /// Active hands-free real-time voice call handle (P2P WebRTC + automatic
@@ -746,5 +915,154 @@ class ActiveVoiceCall {
     transportMode.dispose();
     mySpeaking.dispose();
     peerSpeaking.dispose();
+  }
+}
+
+/// Active multi-person Group Voice Call handle (supports up to 5 members in a single call,
+/// tracks per-member live speaking state, and allows leaving and rejoining at any time).
+class ActiveGroupVoiceCall {
+  ActiveGroupVoiceCall._({
+    required this.groupId,
+    required this.myUid,
+    required this.groupRef,
+    required this.onLeaveRemote,
+    required this.onRestoreAudio,
+    required this.onSetSpeaker,
+  })  : mySpeaking = ValueNotifier<bool>(false),
+        speakingMemberUids = ValueNotifier<Set<String>>(<String>{});
+
+  static const MethodChannel _audioChannel = MethodChannel('melow/audio_call');
+
+  final String groupId;
+  final String myUid;
+  final DocumentReference<Map<String, dynamic>> groupRef;
+  final Future<void> Function() onLeaveRemote;
+  final Future<void> Function() onRestoreAudio;
+  final Future<void> Function(bool speaker) onSetSpeaker;
+
+  final ValueNotifier<bool> mySpeaking;
+  final ValueNotifier<Set<String>> speakingMemberUids;
+
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _chunkSub;
+  final Map<String, Timer> _speakerTimers = <String, Timer>{};
+  final Set<String> _playedChunkIds = <String>{};
+
+  bool _muted = false;
+  bool _speakerOn = true;
+  bool _disposed = false;
+
+  bool get muted => _muted;
+  bool get speakerOn => _speakerOn;
+
+  Future<void> _start() async {
+    _audioChannel.setMethodCallHandler(_handleNativeAudioCallback);
+    try {
+      await _audioChannel.invokeMethod('startFullDuplexRelay', {
+        'speaker': _speakerOn,
+        'muted': _muted,
+      });
+    } catch (_) {}
+
+    _chunkSub = groupRef
+        .collection('audioChunks')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .listen((snap) async {
+      final now = DateTime.now();
+      for (final doc in snap.docs) {
+        if (!_playedChunkIds.add(doc.id)) continue;
+        final d = doc.data();
+        final senderUid = d['senderUid'] as String? ?? '';
+        if (senderUid.isEmpty || senderUid == myUid) continue;
+        final b64 = d['audioBase64'] as String?;
+        if (b64 == null || b64.isEmpty) continue;
+
+        final ts = d['createdAt'];
+        if (ts is Timestamp && now.difference(ts.toDate()).inSeconds > 6) {
+          continue;
+        }
+        if (_disposed) return;
+
+        // Mark this group member as actively speaking!
+        final nextSet = Set<String>.from(speakingMemberUids.value)
+          ..add(senderUid);
+        speakingMemberUids.value = nextSet;
+        _speakerTimers[senderUid]?.cancel();
+        final durMs =
+            ((d['durationMs'] as num?)?.toInt() ?? 320).clamp(200, 5000);
+        _speakerTimers[senderUid] =
+            Timer(Duration(milliseconds: durMs + 400), () {
+          if (_disposed) return;
+          final updated = Set<String>.from(speakingMemberUids.value)
+            ..remove(senderUid);
+          speakingMemberUids.value = updated;
+        });
+
+        try {
+          await _audioChannel.invokeMethod('playFullDuplexFrame', {
+            'audioBase64': b64,
+          });
+        } catch (_) {}
+      }
+    });
+  }
+
+  Future<dynamic> _handleNativeAudioCallback(MethodCall call) async {
+    if (_disposed) return;
+    if (call.method == 'onFullDuplexFrame') {
+      final args = call.arguments;
+      if (args is Map) {
+        final b64 = args['audioBase64'] as String?;
+        final durMs = (args['durationMs'] as num?)?.toInt() ?? 320;
+        if (b64 != null && b64.isNotEmpty && b64.length <= 340000) {
+          groupRef.collection('audioChunks').add({
+            'senderUid': myUid,
+            'audioBase64': b64,
+            'durationMs': durMs.clamp(20, 60000),
+            'createdAt': FieldValue.serverTimestamp(),
+          }).catchError((_) => groupRef);
+        }
+      }
+    } else if (call.method == 'onLocalSpeaking') {
+      final speaking = call.arguments == true;
+      if (!_disposed && mySpeaking.value != speaking) {
+        mySpeaking.value = speaking;
+      }
+    }
+  }
+
+  void setMuted(bool value) {
+    _muted = value;
+    if (value && !_disposed) {
+      mySpeaking.value = false;
+    }
+    _audioChannel
+        .invokeMethod('setFullDuplexMuted', {'muted': value})
+        .catchError((_) {});
+  }
+
+  Future<void> setSpeakerphone(bool value) async {
+    _speakerOn = value;
+    await onSetSpeaker(value);
+  }
+
+  Future<void> leaveCall({bool notifyRemote = true}) async {
+    if (_disposed) return;
+    _disposed = true;
+    _audioChannel.setMethodCallHandler(null);
+    await _chunkSub?.cancel();
+    for (final t in _speakerTimers.values) {
+      t.cancel();
+    }
+    _speakerTimers.clear();
+    try {
+      await _audioChannel.invokeMethod('stopFullDuplexRelay');
+    } catch (_) {}
+    if (notifyRemote) {
+      await onLeaveRemote();
+    }
+    await onRestoreAudio();
+    mySpeaking.dispose();
+    speakingMemberUids.dispose();
   }
 }

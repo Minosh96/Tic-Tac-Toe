@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:confetti/confetti.dart';
@@ -52,6 +53,10 @@ class _RoomPageState extends State<RoomPage> {
   int _lastSoundRound = 0;
   bool _lastRoundDone = false;
   bool _lastFinished = false;
+  bool _wasOpponentLeft = false;
+  bool _opponentRejoinedBannerVisible = false;
+  bool _sentInitialPresence = false;
+  Timer? _rejoinBannerTimer;
 
   @override
   void initState() {
@@ -59,10 +64,17 @@ class _RoomPageState extends State<RoomPage> {
     _confettiController = ConfettiController(
       duration: const Duration(seconds: 2),
     );
+    // Clear any stale hostLeft/guestLeft flag for our side when entering/rejoining the room!
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.services.game.markPlayerPresent(widget.code);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _rejoinBannerTimer?.cancel();
     _chatController.dispose();
     _confettiController.dispose();
     super.dispose();
@@ -141,6 +153,40 @@ class _RoomPageState extends State<RoomPage> {
   void _handleRoomStateEffects(GameRoom room, String mySide) {
     final reducedMotion = widget.services.preferences.reducedMotion ||
         MediaQuery.of(context).disableAnimations;
+
+    // If our own side still has hostLeft/guestLeft == true on the snapshot, clear it immediately!
+    final myLeftFlag = mySide == 'h' ? room.hostLeft : room.guestLeft;
+    if (myLeftFlag && !_confirmedLeave && !_sentInitialPresence) {
+      _sentInitialPresence = true;
+      widget.services.game.markPlayerPresent(widget.code);
+    } else if (!myLeftFlag) {
+      _sentInitialPresence = false;
+    }
+
+    // Track opponent leave -> rejoin transition and notify when opponent is back!
+    final opponentLeftNow =
+        (mySide == 'h' && room.guestLeft) || (mySide == 'g' && room.hostLeft);
+    if (opponentLeftNow && !_wasOpponentLeft) {
+      _wasOpponentLeft = true;
+      _opponentRejoinedBannerVisible = false;
+    } else if (!opponentLeftNow && _wasOpponentLeft) {
+      _wasOpponentLeft = false;
+      _opponentRejoinedBannerVisible = true;
+      final oppSide = mySide == 'h' ? 'g' : 'h';
+      final oppName = room.playerName(oppSide);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.services.sound.play(SoundEffect.click);
+        _notice('👋 Your opponent ($oppName) is back in the room!');
+        setState(() {});
+      });
+      _rejoinBannerTimer?.cancel();
+      _rejoinBannerTimer = Timer(const Duration(seconds: 4), () {
+        if (mounted) {
+          setState(() => _opponentRejoinedBannerVisible = false);
+        }
+      });
+    }
 
     // Immediately record round win/loss/draw & tournament cup/trophy/achievement/stats for BOTH players!
     if (room.roundDone || (room.isFinished && room.champion.isNotEmpty)) {
@@ -479,6 +525,26 @@ class _RoomPageState extends State<RoomPage> {
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         color: scheme.onErrorContainer,
+                                      ),
+                                    ),
+                                  ),
+                                ] else if (_opponentRejoinedBannerVisible) ...[
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '👋 Your opponent (${room.playerName(opponentSide)}) is back!',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.green,
                                       ),
                                     ),
                                   ),

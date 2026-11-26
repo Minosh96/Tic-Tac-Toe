@@ -165,12 +165,33 @@ class GameRepository {
         throw Exception('Room not found. Double-check the 6-character code.');
       }
       final data = snap.data()!;
-      if (data['status'] != 'lobby' ||
-          (data['guestId'] as String? ?? '') != '') {
-        throw Exception('This room is already full.');
+      final existingHostId = data['hostId'] as String? ?? '';
+      final existingGuestId = data['guestId'] as String? ?? '';
+
+      // Rejoin Path 1: Returning Host re-enters their active/lobby/finished room -> clear hostLeft!
+      if (existingHostId == user.uid) {
+        if (data['hostLeft'] == true) {
+          tx.update(ref, {
+            'hostLeft': false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        return;
       }
-      if (data['hostId'] == user.uid) {
-        throw Exception('You are already the host of this room.');
+
+      // Rejoin Path 2: Returning Guest re-enters their active/finished room -> clear guestLeft!
+      if (existingGuestId.isNotEmpty && existingGuestId == user.uid) {
+        if (data['guestLeft'] == true) {
+          tx.update(ref, {
+            'guestLeft': false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        return;
+      }
+
+      if (data['status'] != 'lobby' || existingGuestId.isNotEmpty) {
+        throw Exception('This room is already full.');
       }
       final hostEmoji = GameEngine.sanitizeEmoji(
         data['hostEmoji'] as String?,
@@ -898,6 +919,32 @@ class GameRepository {
         } else if (d['guestId'] == uid) {
           tx.update(ref, {
             'guestLeft': true,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      });
+    } catch (_) {}
+  }
+
+  /// Marks the returning player (host or guest) as back in the room (`hostLeft: false` or `guestLeft: false`)
+  /// so the opponent's "Your opponent left the room" banner immediately disappears and notifies that they are back!
+  Future<void> markPlayerPresent(String code) async {
+    final uid = maybeCurrentUid;
+    if (uid == null) return;
+    try {
+      final ref = _roomRef(code);
+      await _db.runTransaction((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists || snap.data() == null) return;
+        final d = snap.data()!;
+        if (d['hostId'] == uid && d['hostLeft'] == true) {
+          tx.update(ref, {
+            'hostLeft': false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else if (d['guestId'] == uid && d['guestLeft'] == true) {
+          tx.update(ref, {
+            'guestLeft': false,
             'updatedAt': FieldValue.serverTimestamp(),
           });
         }

@@ -19,8 +19,8 @@ import '../../core/app_theme.dart';
 import '../../core/widgets/live_user_avatar.dart';
 import '../../core/widgets/melow_avatar.dart';
 import '../../core/widgets/melow_logo.dart';
-import '../chat/voice_call_screen.dart';
 import '../room/room_page.dart';
+import 'group_voice_call_screen.dart';
 
 /// Friend Group Tournament & Group Chat Screen:
 /// - Displays all Tournament Fixtures (`User1 vs User2`) as compact cards.
@@ -108,66 +108,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     }
   }
 
-  void _openGroupCallPicker(FriendGroup group, UserProfile me) {
-    final others =
-        group.memberUids.where((u) => u != me.uid).toList(growable: false);
-    if (others.isEmpty) {
-      _snack('Wait for another member to join the group before calling.');
+  void _startOrJoinGroupVoiceCall(FriendGroup group, UserProfile me) {
+    if (group.memberUids.length < 2) {
+      _snack('Wait for at least 1 friend to join the group before starting a group call.');
       return;
     }
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '📞 Group Voice Call — Select Member',
-                style: Theme.of(ctx)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 10),
-              for (final uid in others)
-                ListTile(
-                  leading: LiveUserAvatar(
-                    services: widget.services,
-                    uid: uid,
-                    fallbackAvatarId: group.memberAvatars[uid] ?? 'fox',
-                    size: 40,
-                  ),
-                  title: Text(
-                    group.memberNames[uid] ?? 'Group Member',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  trailing: FilledButton.tonalIcon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => VoiceCallScreen.outgoing(
-                            services: widget.services,
-                            calleeUid: uid,
-                            calleeName:
-                                group.memberNames[uid] ?? 'Group Member',
-                            calleeAvatar: group.memberAvatars[uid] ?? 'fox',
-                            callerName: me.nickname,
-                            callerAvatar: me.avatarId,
-                          ),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.call_rounded, size: 16),
-                    label: const Text('Call'),
-                  ),
-                ),
-            ],
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupVoiceCallScreen(
+          services: widget.services,
+          groupId: group.id,
+          myName: me.nickname,
+          myAvatar: me.avatarId,
         ),
       ),
     );
@@ -399,9 +352,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     ),
                     if (me != null)
                       IconButton(
-                        tooltip: 'Group Voice Call',
-                        icon: const Icon(Icons.call_rounded),
-                        onPressed: () => _openGroupCallPicker(group, me),
+                        tooltip: (group.activeCall?.isOngoing ?? false)
+                            ? 'Join Ongoing Group Voice Call'
+                            : 'Start Group Voice Call (Rings All Members)',
+                        icon: Icon(
+                          (group.activeCall?.isOngoing ?? false)
+                              ? Icons.phone_in_talk_rounded
+                              : Icons.call_rounded,
+                          color: (group.activeCall?.isOngoing ?? false)
+                              ? Colors.greenAccent
+                              : null,
+                        ),
+                        onPressed: () => _startOrJoinGroupVoiceCall(group, me),
                       ),
                     PopupMenuButton<String>(
                       onSelected: (action) async {
@@ -450,6 +412,46 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
+                        // Live Active Group Call Banner (allows any member who left or hasn't joined yet to Join/Rejoin!)
+                        if ((group.activeCall?.isOngoing ?? false) &&
+                            me != null) ...[
+                          Card(
+                            color: Colors.green.withValues(alpha: 0.18),
+                            child: ListTile(
+                              leading: const Icon(
+                                Icons.phone_in_talk_rounded,
+                                color: Colors.green,
+                              ),
+                              title: Text(
+                                '🎙️ Group Voice Call Live (${group.activeCall!.activeMemberUids.length}/${group.memberUids.length} in call)',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              subtitle: Text(
+                                group.activeCall!.isMemberInCall(uid)
+                                    ? 'You are in this call • Tap to open call screen'
+                                    : 'Started by ${group.activeCall!.initiatorName} • Tap to join or rejoin!',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              trailing: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                ),
+                                onPressed: () =>
+                                    _startOrJoinGroupVoiceCall(group, me),
+                                icon: const Icon(Icons.call_rounded, size: 16),
+                                label: Text(
+                                  group.activeCall!.isMemberInCall(uid)
+                                      ? 'Open'
+                                      : 'Join Call',
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         // Shareable Join Code Banner while waiting for members
                         Card(
                           child: ListTile(

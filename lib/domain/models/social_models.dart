@@ -326,6 +326,8 @@ class VoiceCallSession {
     required this.calleeName,
     required this.status,
     this.roomId,
+    this.groupId,
+    this.groupName,
     this.offer,
     this.answer,
     this.createdAt,
@@ -339,12 +341,15 @@ class VoiceCallSession {
   final String calleeName;
   final String status; // ringing | active | ended | declined | missed
   final String? roomId;
+  final String? groupId;
+  final String? groupName;
   final Map<String, dynamic>? offer;
   final Map<String, dynamic>? answer;
   final DateTime? createdAt;
 
   bool get isRinging => status == 'ringing';
   bool get isActive => status == 'active';
+  bool get isGroupCall => groupId != null && groupId!.trim().isNotEmpty;
 
   factory VoiceCallSession.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -359,6 +364,8 @@ class VoiceCallSession {
       calleeName: data['calleeName'] as String? ?? 'Friend',
       status: data['status'] as String? ?? 'ended',
       roomId: data['roomId'] as String?,
+      groupId: data['groupId'] as String?,
+      groupName: data['groupName'] as String?,
       offer: data['offer'] is Map<String, dynamic>
           ? data['offer'] as Map<String, dynamic>
           : null,

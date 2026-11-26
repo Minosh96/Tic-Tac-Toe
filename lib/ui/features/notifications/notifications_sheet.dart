@@ -8,6 +8,7 @@ import '../../../domain/models/user_profile.dart';
 import '../../core/widgets/live_user_avatar.dart';
 import '../chat/friend_chat_screen.dart';
 import '../chat/voice_call_screen.dart';
+import '../groups/group_voice_call_screen.dart';
 import '../room/room_page.dart';
 
 /// Unified live Notifications Sheet displaying incoming voice calls,
@@ -203,7 +204,9 @@ class NotificationsSheet extends StatelessWidget {
                                             size: 42,
                                           ),
                                           title: Text(
-                                            '📞 Incoming call from ${call.callerName}',
+                                            call.isGroupCall
+                                                ? '📞 Incoming group call from ${call.callerName} (${call.groupName ?? 'Group'})'
+                                                : '📞 Incoming call from ${call.callerName}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w800,
                                             ),
@@ -226,17 +229,39 @@ class NotificationsSheet extends StatelessWidget {
                                                 ),
                                                 onPressed: () {
                                                   Navigator.pop(context);
-                                                  Navigator.push(
-                                                    context,
-                                                    MaterialPageRoute(
-                                                      builder: (_) =>
-                                                          VoiceCallScreen
-                                                              .incoming(
-                                                        services: services,
-                                                        session: call,
+                                                  if (call.isGroupCall) {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            GroupVoiceCallScreen(
+                                                          services: services,
+                                                          groupId:
+                                                              call.groupId!,
+                                                          myName:
+                                                              me?.nickname ??
+                                                                  call.calleeName,
+                                                          myAvatar:
+                                                              me?.avatarId ??
+                                                                  'astro',
+                                                          incomingAlertCallId:
+                                                              call.callId,
+                                                        ),
                                                       ),
-                                                    ),
-                                                  );
+                                                    );
+                                                  } else {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            VoiceCallScreen
+                                                                .incoming(
+                                                          services: services,
+                                                          session: call,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
                                                 },
                                               ),
                                             ],

@@ -217,7 +217,7 @@ rules_version = '2';
 //   - deletedFor: list<string> (optional, nullable, <=2 UIDs; only field mutable on update by participants)
 //   - createdAt: timestamp (required, == request.time on create, immutable)
 //
-// Collection: calls/{callId} (WebRTC P2P voice call signaling)
+// Collection: calls/{callId} (WebRTC P2P & Group voice call signaling)
 // Fields:
 //   - callerUid: string (required, == auth.uid on create, immutable)
 //   - calleeUid: string (required, != callerUid, immutable)
@@ -225,6 +225,8 @@ rules_version = '2';
 //   - callerAvatar: string (optional, nullable, 0..32)
 //   - calleeName: string (optional, nullable, 0..20)
 //   - roomId: string (optional, nullable, 0..6)
+//   - groupId: string (optional, nullable, 0..64)
+//   - groupName: string (optional, nullable, 0..24)
 //   - status: string (required, 'ringing' on create -> 'active'|'ended'|'declined'|'missed')
 //   - offer: map (optional, nullable, keys subset of ['type', 'sdp'])
 //   - answer: map (optional, nullable, keys subset of ['type', 'sdp'])
@@ -261,8 +263,12 @@ rules_version = '2';
 //   - tournamentStatus: string (required, 'active' | 'final_ready' | 'completed')
 //   - championUid: string (optional, nullable, 0..128)
 //   - championName: string (optional, nullable, 0..20)
+//   - runnerUpUid: string (optional, nullable, 0..128)
+//   - runnerUpName: string (optional, nullable, 0..20)
 //   - cupName: string (optional, nullable, 0..80)
+//   - fixtures: list (optional, nullable, size <= 15)
 //   - activeMatch: map (optional, nullable, size <= 15)
+//   - activeCall: map (optional, nullable, size <= 10)
 //   - winsByUid: map (optional, nullable, size <= 5)
 //   - lossesByUid: map (optional, nullable, size <= 5)
 //   - drawsByUid: map (optional, nullable, size <= 5)
@@ -284,6 +290,13 @@ rules_version = '2';
 //   - msgType: string (optional, nullable, 'text' | 'image' | 'call')
 //   - deletedFor: list<string> (optional, nullable, <=5 UIDs; only field mutable on update by group members)
 //   - createdAt: timestamp (required, == request.time on create, immutable)
+//
+// Subcollection: groups/{groupId}/audioChunks/{chunkId} (Group Relay Voice Calls)
+// Fields:
+//   - senderUid: string (required, == auth.uid)
+//   - audioBase64: string (required, 1..350000)
+//   - durationMs: int (required, 0..60000)
+//   - createdAt: timestamp (required, == request.time)
 //
 // ===============================================================
 
@@ -912,7 +925,7 @@ service cloud.firestore {
     function isValidCall(d) {
       return d.keys().hasOnly([
           'callerUid', 'calleeUid', 'callerName', 'callerAvatar', 'calleeName',
-          'roomId', 'status', 'offer', 'answer', 'createdAt', 'updatedAt'
+          'roomId', 'groupId', 'groupName', 'status', 'offer', 'answer', 'createdAt', 'updatedAt'
         ]) &&
         d.keys().hasAll(['callerUid', 'calleeUid', 'callerName', 'status', 'createdAt']) &&
         isStringLen(d.callerUid, 1, 128) &&
@@ -922,6 +935,8 @@ service cloud.firestore {
         isOptionalNullableString(d, 'callerAvatar', 0, 32) &&
         isOptionalNullableString(d, 'calleeName', 0, 20) &&
         isOptionalNullableString(d, 'roomId', 0, 6) &&
+        isOptionalNullableString(d, 'groupId', 0, 64) &&
+        isOptionalNullableString(d, 'groupName', 0, 24) &&
         d.status in ['ringing', 'active', 'ended', 'declined', 'missed'] &&
         isOptionalNullableSdpMap(d, 'offer') &&
         isOptionalNullableSdpMap(d, 'answer') &&
@@ -958,7 +973,7 @@ service cloud.firestore {
           'name', 'creatorUid', 'hostFriendCode', 'maxMembers',
           'memberUids', 'memberNames', 'memberAvatars',
           'tournamentStatus', 'championUid', 'championName', 'runnerUpUid', 'runnerUpName', 'cupName',
-          'fixtures', 'activeMatch', 'winsByUid', 'lossesByUid', 'drawsByUid', 'cupsByUid',
+          'fixtures', 'activeMatch', 'activeCall', 'winsByUid', 'lossesByUid', 'drawsByUid', 'cupsByUid',
           'lastMessage', 'lastSenderUid', 'lastSenderName', 'lastMessageAt',
           'clearedAtBy', 'createdAt', 'updatedAt'
         ]) &&
@@ -982,6 +997,7 @@ service cloud.firestore {
         isOptionalNullableString(d, 'cupName', 0, 80) &&
         (!('fixtures' in d) || d.fixtures == null || (d.fixtures is list && d.fixtures.size() <= 15)) &&
         isOptionalNullableBoundedMap(d, 'activeMatch', 15) &&
+        isOptionalNullableBoundedMap(d, 'activeCall', 10) &&
         isOptionalNullableBoundedMap(d, 'winsByUid', 5) &&
         isOptionalNullableBoundedMap(d, 'lossesByUid', 5) &&
         isOptionalNullableBoundedMap(d, 'drawsByUid', 5) &&
@@ -1587,6 +1603,13 @@ service cloud.firestore {
           isValidGroupMessage(request.resource.data) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedFor']);
         allow delete: if groupExistsAndMember(groupId);
+      }
+
+      match /audioChunks/{chunkId} {
+        allow read: if groupExistsAndMember(groupId);
+        allow create: if groupExistsAndMember(groupId) &&
+          isValidAudioChunk(request.resource.data);
+        allow update, delete: if groupExistsAndMember(groupId);
       }
     }
 

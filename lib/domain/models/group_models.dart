@@ -187,6 +187,47 @@ class GroupActiveMatch {
   }
 }
 
+/// Active multi-person Group Voice Call state (supports up to 5 members in a single call,
+/// showing all joined members' profiles and allowing anyone who left to rejoin at any time).
+class GroupActiveCall {
+  const GroupActiveCall({
+    required this.callSessionId,
+    required this.initiatorUid,
+    required this.initiatorName,
+    required this.status,
+    required this.activeMemberUids,
+  });
+
+  final String callSessionId;
+  final String initiatorUid;
+  final String initiatorName;
+  final String status; // 'active' | 'ended'
+  final List<String> activeMemberUids;
+
+  bool get isOngoing => status == 'active' && activeMemberUids.isNotEmpty;
+  bool isMemberInCall(String uid) => activeMemberUids.contains(uid);
+
+  Map<String, dynamic> toMap() => {
+        'callSessionId': callSessionId,
+        'initiatorUid': initiatorUid,
+        'initiatorName': initiatorName,
+        'status': status,
+        'activeMemberUids': activeMemberUids,
+      };
+
+  factory GroupActiveCall.fromMap(Map<String, dynamic> map) {
+    return GroupActiveCall(
+      callSessionId: map['callSessionId'] as String? ?? '',
+      initiatorUid: map['initiatorUid'] as String? ?? '',
+      initiatorName: map['initiatorName'] as String? ?? 'Member',
+      status: map['status'] as String? ?? 'ended',
+      activeMemberUids: (map['activeMemberUids'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
+    );
+  }
+}
+
 /// Friend Group (2 to 5 members joining via host's Friend Code) with
 /// auto-generated tournament fixtures, participant-only room code visibility,
 /// Final Match for the Melow Challenge Champion Cup, Champion & Runner-Up summary,
@@ -209,6 +250,7 @@ class FriendGroup {
     this.cupName = 'Melow Challenge Champion Cup',
     this.fixtures = const <GroupFixture>[],
     this.activeMatch,
+    this.activeCall,
     this.winsByUid = const <String, int>{},
     this.lossesByUid = const <String, int>{},
     this.drawsByUid = const <String, int>{},
@@ -239,6 +281,7 @@ class FriendGroup {
   final String cupName;
   final List<GroupFixture> fixtures;
   final GroupActiveMatch? activeMatch;
+  final GroupActiveCall? activeCall;
   final Map<String, int> winsByUid;
   final Map<String, int> lossesByUid;
   final Map<String, int> drawsByUid;
@@ -354,6 +397,11 @@ class FriendGroup {
         ? GroupActiveMatch.fromMap(Map<String, dynamic>.from(rawMatch))
         : null;
 
+    final rawCall = d['activeCall'];
+    final activeCallObj = rawCall is Map
+        ? GroupActiveCall.fromMap(Map<String, dynamic>.from(rawCall))
+        : null;
+
     return FriendGroup(
       id: doc.id,
       name: d['name'] as String? ?? 'Melow Squad',
@@ -371,6 +419,7 @@ class FriendGroup {
       cupName: d['cupName'] as String? ?? 'Melow Challenge Champion Cup',
       fixtures: fixtureList,
       activeMatch: active,
+      activeCall: activeCallObj,
       winsByUid: parseIntMap(d['winsByUid']),
       lossesByUid: parseIntMap(d['lossesByUid']),
       drawsByUid: parseIntMap(d['drawsByUid']),

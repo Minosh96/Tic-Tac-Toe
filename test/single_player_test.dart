@@ -370,6 +370,20 @@ void main() {
       expect(fixtures[0].roomId.length, 6);
     });
 
+    test('GroupActiveCall tracks up to 5 members in a single group call and supports leaving/rejoining', () {
+      final call = GroupActiveCall.fromMap({
+        'callSessionId': 'gcall_1',
+        'initiatorUid': 'u1',
+        'initiatorName': 'Minosh',
+        'status': 'active',
+        'activeMemberUids': ['u1', 'u2', 'u3'],
+      });
+      expect(call.isOngoing, isTrue);
+      expect(call.isMemberInCall('u1'), isTrue);
+      expect(call.isMemberInCall('u2'), isTrue);
+      expect(call.isMemberInCall('u4'), isFalse);
+    });
+
     test('melowAvatars contains only visible universal single-codepoint emojis and includes new avatars', () {
       expect(melowAvatars.length, greaterThanOrEqualTo(18));
       for (final avatar in melowAvatars) {

@@ -323,14 +323,16 @@ class GroupRepository {
       throw Exception('Only ${fixture.player1Name} and ${fixture.player2Name} can play this match.');
     }
 
-    // If a room code already exists for this fixture, join it if not already in it!
+    // If a room code already exists for this fixture, join or rejoin it!
     if (fixture.roomId.isNotEmpty) {
       final roomSnap = await _db.collection('rooms').doc(fixture.roomId).get();
       if (roomSnap.exists && roomSnap.data() != null) {
         final d = roomSnap.data()!;
         final hostId = d['hostId'] as String? ?? '';
         final guestId = d['guestId'] as String? ?? '';
-        if (me.uid != hostId && guestId.isEmpty) {
+        if (me.uid == hostId || me.uid == guestId) {
+          await gameRepository.markPlayerPresent(fixture.roomId);
+        } else if (guestId.isEmpty) {
           final hostEmoji = d['hostEmoji'] as String? ?? '❌';
           final myEmoji = me.preferredEmoji == hostEmoji
               ? emojiChoices.firstWhere((e) => e != hostEmoji)
