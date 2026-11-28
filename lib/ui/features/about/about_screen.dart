@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 3.9.3 (Build 21)',
+            'Version 3.9.4 (Build 22)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -39,7 +39,7 @@ class AboutScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'What’s New in Version 3.9.3',
+                    'What’s New in Version 3.9.4',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium

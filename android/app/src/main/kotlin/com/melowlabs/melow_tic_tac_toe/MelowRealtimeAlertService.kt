@@ -3,12 +3,9 @@ package com.melowlabs.melow_tic_tac_toe
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
+import android.os.PowerManager
 import com.google.firebase.FirebaseApp
-import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -28,7 +25,6 @@ import com.google.firebase.firestore.ListenerRegistration
  */
 class MelowRealtimeAlertService : Service() {
     companion object {
-        private const val SERVICE_NOTIF_ID = 90400
         const val EXTRA_UID = "extra_uid"
 
         fun start(context: Context, uid: String? = null) {
@@ -39,11 +35,7 @@ class MelowRealtimeAlertService : Service() {
                         putExtra(EXTRA_UID, uid)
                     }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    ContextCompatStarter.startForeground(appCtx, intent)
-                } else {
-                    appCtx.startService(intent)
-                }
+                appCtx.startService(intent)
             } catch (_: Exception) {
             }
         }
@@ -70,16 +62,7 @@ class MelowRealtimeAlertService : Service() {
         }
     }
 
-    private object ContextCompatStarter {
-        fun startForeground(context: Context, intent: Intent) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-        }
-    }
-
+    private var cpuWakeLock: PowerManager.WakeLock? = null
     private var watchedUid: String = ""
     private var callsListener: ListenerRegistration? = null
     private var chatsListener: ListenerRegistration? = null
@@ -102,46 +85,32 @@ class MelowRealtimeAlertService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        promoteToForeground()
+        acquireBackgroundWakeLock()
         ensureFirebaseAndAttachListeners(null)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        promoteToForeground()
+        acquireBackgroundWakeLock()
         val passedUid = intent?.getStringExtra(EXTRA_UID)
         ensureFirebaseAndAttachListeners(passedUid)
         return START_STICKY
     }
 
-    private fun promoteToForeground() {
+    private fun acquireBackgroundWakeLock() {
         try {
             MelowNotificationHelper.ensureChannels(this)
-            val openPending = MelowNotificationHelper.createOpenAppPendingIntent(
-                this,
-                SERVICE_NOTIF_ID
-            )
-            val notif = NotificationCompat.Builder(
-                this,
-                MelowNotificationHelper.NOTIF_CH_SERVICE
-            )
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle("Melow Tic Tac Toe")
-                .setContentText("Connected for incoming calls, messages & challenges")
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                .setOngoing(true)
-                .setSilent(true)
-                .setContentIntent(openPending)
-                .build()
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(
-                    SERVICE_NOTIF_ID,
-                    notif,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING
-                )
-            } else {
-                startForeground(SERVICE_NOTIF_ID, notif)
+            if (cpuWakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                cpuWakeLock = pm.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "melow:realtime_alert_standby"
+                ).apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (cpuWakeLock?.isHeld == false) {
+                // Keep CPU awake in background so Firestore listeners fire while phone is locked
+                cpuWakeLock?.acquire(12 * 60 * 60 * 1000L)
             }
         } catch (_: Exception) {
         }
@@ -417,6 +386,13 @@ class MelowRealtimeAlertService : Service() {
     }
 
     override fun onDestroy() {
+        try {
+            if (cpuWakeLock?.isHeld == true) {
+                cpuWakeLock?.release()
+            }
+        } catch (_: Exception) {
+        }
+        cpuWakeLock = null
         val auth = try {
             FirebaseAuth.getInstance()
         } catch (_: Exception) {
