@@ -45,8 +45,6 @@ class MainActivity : FlutterActivity() {
         private const val NOTIF_CHANNEL = "melow/notifications"
         private const val REQ_RECORD_AUDIO = 4091
         private const val REQ_POST_NOTIFICATIONS = 4092
-        private const val NOTIF_CH_MESSAGES = "melow_messages"
-        private const val NOTIF_CH_CALLS = "melow_calls"
         private const val SAMPLE_RATE = 8000
         private const val FRAME_SAMPLES = 160 // 20ms at 8kHz
         private const val PACKET_FRAMES = 16 // 320ms per transmitted speech packet
@@ -54,9 +52,17 @@ class MainActivity : FlutterActivity() {
         private const val VAD_RMS_IDLE = 300.0
         private const val VAD_RMS_WHILE_PLAYING = 650.0
         private val MAGIC_MULAW = byteArrayOf('M'.code.toByte(), 'U'.code.toByte(), '0'.code.toByte(), '8'.code.toByte())
+
+        @Volatile
+        var isInForeground: Boolean = false
+
+        @Volatile
+        var activeChatFriendUid: String? = null
     }
 
     private var methodChannel: MethodChannel? = null
+    private var notifChannel: MethodChannel? = null
+    private var pendingAutoAnswerCallId: String? = null
     private var pendingMicResult: MethodChannel.Result? = null
     private var pendingNotifResult: MethodChannel.Result? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -78,10 +84,12 @@ class MainActivity : FlutterActivity() {
 
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel = channel
-        ensureNotificationChannels()
+        MelowNotificationHelper.ensureChannels(this)
+        handleIncomingCallAnswerIntent(intent)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIF_CHANNEL)
-            .setMethodCallHandler { call, result ->
+        val nChan = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIF_CHANNEL)
+        notifChannel = nChan
+        nChan.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "requestNotificationPermission" -> {
                         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -108,21 +116,34 @@ class MainActivity : FlutterActivity() {
                         val title = call.argument<String>("title") ?: "New Message"
                         val body = call.argument<String>("body") ?: ""
                         val count = call.argument<Int>("count") ?: 1
-                        showMessageNotification(notifId, title, body, count)
+                        MelowNotificationHelper.showMessageNotification(
+                            this,
+                            notifId,
+                            title,
+                            body,
+                            count
+                        )
                         result.success(true)
                     }
 
                     "showCallNotification" -> {
                         val callId = call.argument<String>("callId") ?: "call"
                         val callerName = call.argument<String>("callerName") ?: "Friend"
-                        showCallNotification(callId, callerName)
+                        val isGroupCall = call.argument<Boolean>("isGroupCall") ?: false
+                        val groupName = call.argument<String>("groupName")
+                        MelowNotificationHelper.showCallNotification(
+                            this,
+                            callId,
+                            callerName,
+                            isGroupCall,
+                            groupName
+                        )
                         result.success(true)
                     }
 
                     "cancelCallNotification" -> {
                         val callId = call.argument<String>("callId") ?: "call"
-                        NotificationManagerCompat.from(this)
-                            .cancel(callNotificationId(callId))
+                        MelowNotificationHelper.cancelCallNotification(this, callId)
                         result.success(true)
                     }
 
@@ -133,13 +154,25 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "startBackgroundKeepAlive" -> {
-                        startKeepAliveService()
+                        val uid = call.argument<String>("uid")
+                        MelowRealtimeAlertService.start(this, uid)
                         result.success(true)
                     }
 
                     "stopBackgroundKeepAlive" -> {
-                        stopKeepAliveService()
+                        MelowRealtimeAlertService.stop(this)
                         result.success(true)
+                    }
+
+                    "setActiveChatFriendUid" -> {
+                        activeChatFriendUid = call.argument<String>("friendUid")
+                        result.success(true)
+                    }
+
+                    "consumePendingAutoAnswerCallId" -> {
+                        val id = pendingAutoAnswerCallId
+                        pendingAutoAnswerCallId = null
+                        result.success(id)
                     }
 
                     else -> result.notImplemented()
@@ -557,143 +590,38 @@ class MainActivity : FlutterActivity() {
         return (if (sign != 0) -sample else sample).toShort()
     }
 
+    override fun onResume() {
+        super.onResume()
+        isInForeground = true
+    }
+
+    override fun onPause() {
+        isInForeground = false
+        super.onPause()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingCallAnswerIntent(intent)
+    }
+
+    private fun handleIncomingCallAnswerIntent(intent: Intent?) {
+        val callId = intent?.getStringExtra(MelowNotificationHelper.EXTRA_AUTO_ANSWER_CALL_ID)
+        if (!callId.isNullOrEmpty()) {
+            intent.removeExtra(MelowNotificationHelper.EXTRA_AUTO_ANSWER_CALL_ID)
+            MelowNotificationHelper.cancelCallNotification(this, callId)
+            pendingAutoAnswerCallId = callId
+            mainHandler.post {
+                notifChannel?.invokeMethod("onAnswerCallFromNotification", callId)
+            }
+        }
+    }
+
     override fun onDestroy() {
+        isInForeground = false
         stopFullDuplexEngine()
         super.onDestroy()
-    }
-
-    private fun startKeepAliveService() {
-        // Foreground dataSync service removed to comply with Google Play policy.
-        // High-priority message & call notifications with wake locks remain active.
-    }
-
-    private fun stopKeepAliveService() {
-        // No-op: Foreground dataSync service removed.
-    }
-
-    private fun wakeScreenBriefly(durationMs: Long) {
-        try {
-            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            if (!pm.isInteractive) {
-                @Suppress("DEPRECATION")
-                val wl = pm.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                        PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                        PowerManager.ON_AFTER_RELEASE,
-                    "melow:notification_wake"
-                )
-                wl.acquire(durationMs)
-            }
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun ensureNotificationChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        val msgChannel = NotificationChannel(
-            NOTIF_CH_MESSAGES,
-            "Chat Messages",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Notifications for new friend chat messages"
-            enableVibration(true)
-            setShowBadge(true)
-            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-        }
-        nm.createNotificationChannel(msgChannel)
-
-        val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-        val callAudioAttr = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        val callChannel = NotificationChannel(
-            NOTIF_CH_CALLS,
-            "Voice Calls",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Incoming voice calls from friends"
-            enableVibration(true)
-            vibrationPattern = longArrayOf(0, 450, 250, 450)
-            setSound(ringtoneUri, callAudioAttr)
-            setShowBadge(true)
-            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-        }
-        nm.createNotificationChannel(callChannel)
-    }
-
-    private fun canPostNotifications(): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun createOpenAppPendingIntent(reqCode: Int): PendingIntent {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-        return PendingIntent.getActivity(this, reqCode, intent, flags)
-    }
-
-    private fun showMessageNotification(notifId: Int, title: String, body: String, count: Int) {
-        if (!canPostNotifications()) return
-        ensureNotificationChannels()
-        wakeScreenBriefly(3500L)
-        val builder = NotificationCompat.Builder(this, NOTIF_CH_MESSAGES)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .setAutoCancel(true)
-            .setNumber(count)
-            .setContentIntent(createOpenAppPendingIntent(notifId))
-        try {
-            NotificationManagerCompat.from(this).notify(notifId, builder.build())
-        } catch (_: SecurityException) {
-        }
-    }
-
-    private fun callNotificationId(callId: String): Int =
-        200000 + (callId.hashCode() and 0x7FFF)
-
-    private fun showCallNotification(callId: String, callerName: String) {
-        if (!canPostNotifications()) return
-        ensureNotificationChannels()
-        wakeScreenBriefly(8000L)
-        val id = callNotificationId(callId)
-        val openPending = createOpenAppPendingIntent(id)
-        val builder = NotificationCompat.Builder(this, NOTIF_CH_CALLS)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Incoming Voice Call")
-            .setContentText("$callerName is calling you on Melow Tic Tac Toe")
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setFullScreenIntent(openPending, true)
-            .setAutoCancel(true)
-            .setOngoing(true)
-            .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
-            .setContentIntent(openPending)
-        val notification = builder.build().apply {
-            flags = flags or Notification.FLAG_INSISTENT
-        }
-        try {
-            NotificationManagerCompat.from(this).notify(id, notification)
-        } catch (_: SecurityException) {
-        }
     }
 
     override fun onRequestPermissionsResult(

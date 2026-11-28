@@ -7,7 +7,38 @@ class PushNotificationService {
 
   /// Tracks which friend chat screen is currently open on screen so we don't
   /// show a redundant notification banner for the active conversation in foreground.
-  static String? activeChatFriendUid;
+  static String? _activeChatFriendUid;
+  static String? get activeChatFriendUid => _activeChatFriendUid;
+  static set activeChatFriendUid(String? uid) {
+    _activeChatFriendUid = uid;
+    try {
+      _channel.invokeMethod('setActiveChatFriendUid', {'friendUid': uid});
+    } catch (_) {}
+  }
+
+  /// Registers a callback invoked when the user taps "Answer" on an incoming call
+  /// notification from the lock screen or while using another app.
+  static void setOnAnswerCallFromNotification(
+    void Function(String callId)? handler,
+  ) {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onAnswerCallFromNotification') {
+        final callId = call.arguments as String?;
+        if (callId != null && callId.isNotEmpty && handler != null) {
+          handler(callId);
+        }
+      }
+    });
+  }
+
+  static Future<String?> consumePendingAutoAnswerCallId() async {
+    try {
+      return await _channel
+          .invokeMethod<String>('consumePendingAutoAnswerCallId');
+    } catch (_) {
+      return null;
+    }
+  }
 
   static int messageNotificationIdFor(String chatId) =>
       100000 + (chatId.hashCode & 0x7FFF);
@@ -51,11 +82,15 @@ class PushNotificationService {
   static Future<void> showCallNotification({
     required String callId,
     required String callerName,
+    bool isGroupCall = false,
+    String? groupName,
   }) async {
     try {
       await _channel.invokeMethod('showCallNotification', {
         'callId': callId,
         'callerName': callerName,
+        'isGroupCall': isGroupCall,
+        'groupName': groupName,
       });
     } catch (_) {}
   }
@@ -68,11 +103,14 @@ class PushNotificationService {
     } catch (_) {}
   }
 
-  /// Starts Android foreground keep-alive service so live messages & voice calls
-  /// still wake the phone and ring even while the phone is locked.
-  static Future<void> startBackgroundKeepAlive() async {
+  /// Starts the native Android real-time background service (`MelowRealtimeAlertService`)
+  /// so incoming calls, messages, friend requests, and challenges ring and show
+  /// heads-up notifications even when the phone is locked or in another app.
+  static Future<void> startBackgroundKeepAlive({String? uid}) async {
     try {
-      await _channel.invokeMethod('startBackgroundKeepAlive');
+      await _channel.invokeMethod('startBackgroundKeepAlive', {
+        if (uid != null && uid.isNotEmpty) 'uid': uid,
+      });
     } catch (_) {}
   }
 

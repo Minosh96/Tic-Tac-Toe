@@ -27,7 +27,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version 3.9.2 (Build 20)',
+            'Version 3.9.3 (Build 21)',
             textAlign: TextAlign.center,
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
@@ -39,13 +39,16 @@ class AboutScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'What’s New in Version 3.9.2',
+                    'What’s New in Version 3.9.3',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
                         ?.copyWith(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 10),
+                  const _Bullet(
+                    text: 'WhatsApp-style background call & message notifications: incoming calls and messages ring and pop up even when your phone is locked or you are using another app, with direct Answer & Decline actions',
+                  ),
                   const _Bullet(
                     text: 'Multi-participant Group Voice Calls (up to 5 members in a single call) with simultaneous ringing, live participant profiles & speaking indicators, and anytime leave/rejoin',
                   ),

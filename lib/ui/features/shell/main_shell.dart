@@ -77,11 +77,21 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   Future<void> _initNotifications() async {
     await PushNotificationService.requestPermission();
-    // Start lightweight Android foreground service so incoming calls & messages
-    // still notify & ring even while the phone screen is locked.
-    await PushNotificationService.startBackgroundKeepAlive();
     if (!mounted) return;
     final uid = widget.services.game.currentUid;
+    // Start native Android background service (MelowRealtimeAlertService) with our current UID
+    // so incoming calls & messages ring and pop up even while the phone is locked or in another app!
+    await PushNotificationService.startBackgroundKeepAlive(uid: uid);
+    if (!mounted) return;
+
+    PushNotificationService.setOnAnswerCallFromNotification((callId) {
+      _openCallByIdFromNotification(callId);
+    });
+    final pendingCallId =
+        await PushNotificationService.consumePendingAutoAnswerCallId();
+    if (pendingCallId != null && pendingCallId.isNotEmpty) {
+      _openCallByIdFromNotification(pendingCallId);
+    }
 
     _chatNotifSub = widget.services.chat.watchUserChats(uid).listen((chats) {
       if (!_chatsSeeded) {
@@ -131,6 +141,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
           PushNotificationService.showCallNotification(
             callId: call.callId,
             callerName: call.callerName,
+            isGroupCall: call.isGroupCall,
+            groupName: call.groupName,
           );
         }
       }
@@ -216,6 +228,40 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _openCallByIdFromNotification(String callId) async {
+    try {
+      await PushNotificationService.cancelCallNotification(callId);
+      final session = await widget.services.voiceCall.watchCall(callId).first;
+      if (!mounted || session == null) return;
+      if (!session.isRinging && !session.isActive) return;
+
+      if (session.isGroupCall && session.groupId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => GroupVoiceCallScreen(
+              services: widget.services,
+              groupId: session.groupId!,
+              myName: session.calleeName,
+              myAvatar: 'astro',
+              incomingAlertCallId: session.callId,
+            ),
+          ),
+        );
+      } else if (session.isRinging) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VoiceCallScreen.incoming(
+              services: widget.services,
+              session: session,
+            ),
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appInForeground = state == AppLifecycleState.resumed;
@@ -223,6 +269,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    PushNotificationService.setOnAnswerCallFromNotification(null);
     WidgetsBinding.instance.removeObserver(this);
     _authSub?.cancel();
     _chatNotifSub?.cancel();

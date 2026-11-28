@@ -1146,7 +1146,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         Card(
                           child: ListTile(
                             leading: const Icon(Icons.info_outline_rounded),
-                            title: const Text('About Melow Tic Tac Toe v3.9.2'),
+                            title: const Text('About Melow Tic Tac Toe v3.9.3'),
                             trailing: const Icon(Icons.chevron_right_rounded),
                             onTap: () => Navigator.push(
                               context,
